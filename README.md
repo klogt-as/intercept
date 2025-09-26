@@ -254,7 +254,7 @@ Start intercepting.
 
 ```ts
 server.listen({
-  baseUrl?: string;                // default: "http://localhost"
+  baseUrl?: string; // default: "http://localhost"
   onUnhandledRequest?: "warn" | "bypass" | "error" | ((req) => Strategy);
 });
 ```
