@@ -18,7 +18,7 @@ export function createFetchAdapter(): Adapter {
 
       globalThis.fetch = async (
         input: RequestInfo | URL,
-        init?: RequestInit
+        init?: RequestInit,
       ): Promise<Response> => {
         const req = new Request(input, init);
         const url = new URL(req.url, core.getOptions().baseUrl);
@@ -61,7 +61,7 @@ export function createFetchAdapter(): Adapter {
         };
         return HttpResponse.json(
           { error: "Unhandled request", details },
-          { status: 501 }
+          { status: 501 },
         );
       };
     },

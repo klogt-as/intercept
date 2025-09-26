@@ -7,7 +7,7 @@ import type { OnUnhandledRequestStrategy } from "./types";
 export const headersToObject = (h: Headers) => Object.fromEntries(h.entries());
 
 export const tryJson = async <T = unknown>(
-  req: Request
+  req: Request,
 ): Promise<T | undefined> => {
   try {
     return (await req.clone().json()) as T;
@@ -44,7 +44,7 @@ export function compilePattern(pattern: string): {
 
 export function matchPattern(
   pattern: { re: RegExp; keys: string[] },
-  pathname: string
+  pathname: string,
 ): Record<string, string> | null {
   const m = pattern.re.exec(pathname);
   if (!m) return null;
@@ -77,7 +77,7 @@ export function normalizeBaseUrl(u: string) {
 
 export function resolveStrategy(
   opt: OnUnhandledRequestStrategy | undefined,
-  args: { request: Request; url: URL }
+  args: { request: Request; url: URL },
 ): "warn" | "error" | "bypass" {
   if (typeof opt === "function") {
     const r = opt(args);

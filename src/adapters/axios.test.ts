@@ -116,7 +116,7 @@ describe("axios adapter + intercept", () => {
     intercept.post("/users/:id").handle(async ({ params, body }) => {
       return new Response(
         JSON.stringify({ id: params.id, ok: true, echo: body }),
-        { status: 201, headers: { "content-type": "application/json" } }
+        { status: 201, headers: { "content-type": "application/json" } },
       );
     });
 
@@ -171,7 +171,7 @@ describe("axios adapter + intercept", () => {
     server.attachAdapter(createAxiosAdapter(axios));
 
     await expect(
-      axios.request({ url: "/blocked", method: "post", data: { x: 1 } })
+      axios.request({ url: "/blocked", method: "post", data: { x: 1 } }),
     ).rejects.toMatchObject({
       isAxiosError: true,
       response: {
@@ -202,7 +202,7 @@ describe("axios adapter + intercept", () => {
           ctype: request.headers.get("content-type"),
           body,
         }),
-        { status: 200, headers: { "content-type": "application/json" } }
+        { status: 200, headers: { "content-type": "application/json" } },
       );
     });
 

@@ -85,14 +85,14 @@ export function createAxiosAdapter(instance: AxiosLikeInstance): Adapter {
    */
   async function responseToAxios(
     config: MinimalAxiosConfig | any,
-    res: Response
+    res: Response,
   ): Promise<MinimalAxiosResponse> {
     const ct = res.headers.get("content-type") || "";
     const data: unknown = ct.includes("application/json")
       ? await res.json()
       : ct.startsWith("text/")
-      ? await res.text()
-      : await res.arrayBuffer();
+        ? await res.text()
+        : await res.arrayBuffer();
 
     return {
       data,
@@ -126,7 +126,7 @@ export function createAxiosAdapter(instance: AxiosLikeInstance): Adapter {
    */
   function axiosConfigToRequest(
     config: MinimalAxiosConfig,
-    serverBaseUrl: string
+    serverBaseUrl: string,
   ): Request {
     const candidateBase =
       (config.baseURL as string | undefined) ??
@@ -171,7 +171,7 @@ export function createAxiosAdapter(instance: AxiosLikeInstance): Adapter {
         // NB: `config` er `any` her for å støtte både ekte axios og stub.
         const req = axiosConfigToRequest(
           config as MinimalAxiosConfig,
-          core.getOptions().baseUrl
+          core.getOptions().baseUrl,
         );
         const url = new URL(req.url, core.getOptions().baseUrl);
 
@@ -193,8 +193,8 @@ export function createAxiosAdapter(instance: AxiosLikeInstance): Adapter {
                 config,
                 HttpResponse.json(
                   { error: "No axios adapter configured" },
-                  { status: 500 }
-                )
+                  { status: 500 },
+                ),
               );
         }
         if (strategy === "bypass") {
@@ -204,8 +204,8 @@ export function createAxiosAdapter(instance: AxiosLikeInstance): Adapter {
                 config,
                 HttpResponse.json(
                   { error: "No axios adapter configured" },
-                  { status: 500 }
-                )
+                  { status: 500 },
+                ),
               );
         }
 
@@ -220,7 +220,7 @@ export function createAxiosAdapter(instance: AxiosLikeInstance): Adapter {
               headers: headersToObject(req.headers),
             },
           },
-          { status: 501 }
+          { status: 501 },
         );
         const axiosRes = await responseToAxios(config, res);
 
@@ -230,7 +230,7 @@ export function createAxiosAdapter(instance: AxiosLikeInstance): Adapter {
             isAxiosError: true as const,
             response: axiosRes,
             config,
-          }
+          },
         );
         throw err;
       };

@@ -22,7 +22,7 @@ export type MinimalAxiosResponse<T = unknown> = {
 };
 
 export type AxiosAdapterFn = (
-  config: MinimalAxiosConfig
+  config: MinimalAxiosConfig,
 ) => Promise<MinimalAxiosResponse>;
 
 export type MinimalAxiosInstance = {

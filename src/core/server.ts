@@ -54,7 +54,7 @@ const _adapters: Adapter[] = [];
  */
 function findHandler(
   method: HttpMethod,
-  url: URL
+  url: URL,
 ): { handler: InternalHandler; params: Record<string, string> } | null {
   const base = new URL(_currentOptions.baseUrl);
 

@@ -39,7 +39,7 @@ function register(
     request: Request;
     url: URL;
     params: Record<string, string>;
-  }) => Response | Promise<Response>
+  }) => Response | Promise<Response>,
 ) {
   server.use(method, path, handler);
 }
@@ -51,7 +51,7 @@ function register(
 async function toResolverArgs<TReq>(
   request: Request,
   url: URL,
-  params: Record<string, string>
+  params: Record<string, string>,
 ) {
   let body: TReq | undefined;
   try {
@@ -123,7 +123,7 @@ function addInterceptFor(method: HttpMethod) {
      */
     const respondSuccess = <T extends JsonBodyType>(
       json: T,
-      init: ResolveInit
+      init: ResolveInit,
     ) => {
       const status = init.status ?? DEFAULT_STATUS[method];
 
@@ -161,7 +161,7 @@ function addInterceptFor(method: HttpMethod) {
        *             to comply with `exactOptionalPropertyTypes: true`.
        */
       reject<T extends JsonBodyType | undefined = JsonBodyType>(
-        opts: RejectInit<T> = {}
+        opts: RejectInit<T> = {},
       ) {
         const status = opts.status ?? 400;
         register(method, path, () => {
@@ -170,7 +170,7 @@ function addInterceptFor(method: HttpMethod) {
           }
           return HttpResponse.json(
             opts.body as Exclude<T, undefined>,
-            makeInit(status, opts.headers)
+            makeInit(status, opts.headers),
           );
         });
       },
@@ -197,7 +197,7 @@ function addInterceptFor(method: HttpMethod) {
           return new Promise<Response>((resolve) => {
             setTimeout(
               () => resolve(new HttpResponse(null, makeInit(status, headers))),
-              Math.max(0, delayMs)
+              Math.max(0, delayMs),
             );
           });
         });

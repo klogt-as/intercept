@@ -44,7 +44,7 @@ describe("server and intercept integration", () => {
     await expectJSON(
       await fetch("http://api.test/todos", { method: "POST" }),
       201,
-      { id: 2 }
+      { id: 2 },
     );
   });
 
@@ -77,7 +77,7 @@ describe("server and intercept integration", () => {
     intercept.post("/users/:id").handle(async ({ params, body }) => {
       return HttpResponse.json(
         { id: params.id, ok: true, echo: body },
-        { status: 201 }
+        { status: 201 },
       );
     });
 
