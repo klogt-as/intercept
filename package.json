@@ -61,6 +61,7 @@
     "build": "tsdown",
     "dev": "tsdown --watch",
     "test": "vitest",
+    "test:ci": "vitest run --reporter=dot",
     "check": "exec biome check",
     "lint": "exec biome check --write",
     "typecheck": "tsc --noEmit",
