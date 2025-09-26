@@ -41,11 +41,16 @@ Modern frontend apps talk to APIs. In tests, you want predictable responses with
 
 ## Installation
 
+### npm
 ```bash
 npm i -D @klogt/intercept
-# or
+```
+### pnpm
+```bash
 pnpm add -D @klogt/intercept
-# or
+```
+### yarn
+```bash
 yarn add -D @klogt/intercept
 ```
 
