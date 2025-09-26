@@ -61,6 +61,8 @@
     "build": "tsdown",
     "dev": "tsdown --watch",
     "test": "vitest",
+    "check": "exec biome check",
+    "lint": "exec biome check --write",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run typecheck && npm test && npm run build",
     "release": "bumpp && npm publish"
