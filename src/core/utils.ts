@@ -45,16 +45,24 @@ export function compilePattern(pattern: string): {
 export function matchPattern(
   pattern: { re: RegExp; keys: string[] },
   pathname: string
-) {
+): Record<string, string> | null {
   const m = pattern.re.exec(pathname);
   if (!m) return null;
 
   const params: Record<string, string> = {};
+
   for (let i = 0; i < pattern.keys.length; i++) {
     const key = pattern.keys[i];
+    if (key === undefined) continue;
+
     const raw = m[i + 1] ?? "";
-    params[key] = decodeURIComponent(raw);
+    try {
+      params[key] = decodeURIComponent(raw);
+    } catch {
+      params[key] = raw;
+    }
   }
+
   return params;
 }
 

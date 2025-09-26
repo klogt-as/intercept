@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { server } from "../../core/server";
-import { HttpResponse } from "../../http/response";
-import { intercept } from "../intercept";
+import { server } from "../core/server";
+import { HttpResponse } from "../http/response";
+import { intercept } from "./intercept";
 
 /**
  * Stub the "original" fetch BEFORE calling server.listen(),

@@ -111,7 +111,15 @@ const never: Promise<Response> = new Promise(() => {});
 function addInterceptFor(method: HttpMethod) {
   return (path: Path) => {
     /**
-     * Ensure we do the right thing for 204: strip body if caller provides one.
+     * Build a ResponseInit without explicitly setting undefined properties.
+     * This avoids exactOptionalPropertyTypes issues (headers?: HeadersInit).
+     */
+    const makeInit = (status: number, headers?: JsonHeaders): ResponseInit =>
+      headers ? { status, headers } : { status };
+
+    /**
+     * Ensure the right behavior for 204: strip the body if the caller provides one.
+     * Also omit `headers` from the init when undefined (to satisfy exactOptionalPropertyTypes).
      */
     const respondSuccess = <T extends JsonBodyType>(
       json: T,
@@ -121,9 +129,9 @@ function addInterceptFor(method: HttpMethod) {
 
       // If status implies no content, force null body.
       if (status === 204) {
-        return new HttpResponse(null, { status, headers: init.headers });
+        return new HttpResponse(null, makeInit(status, init.headers));
       }
-      return HttpResponse.json(json, { status, headers: init.headers });
+      return HttpResponse.json(json, makeInit(status, init.headers));
     };
 
     return {
@@ -135,6 +143,8 @@ function addInterceptFor(method: HttpMethod) {
        *
        * @param json JSON body to return (ignored if status=204).
        * @param init Optional overrides like `status` or custom `headers`.
+       *             Note: `headers` is omitted from ResponseInit when undefined
+       *             to comply with `exactOptionalPropertyTypes: true`.
        */
       resolve<T extends JsonBodyType>(json: T, init: ResolveInit = {}) {
         register(method, path, () => respondSuccess(json, init));
@@ -147,6 +157,8 @@ function addInterceptFor(method: HttpMethod) {
        * intercept.post('/login').reject({ status: 401, body: { code: 'UNAUTHORIZED' } })
        *
        * @param opts Error options (status default is 400).
+       *             Note: `headers` is omitted from ResponseInit when undefined
+       *             to comply with `exactOptionalPropertyTypes: true`.
        */
       reject<T extends JsonBodyType | undefined = JsonBodyType>(
         opts: RejectInit<T> = {}
@@ -154,12 +166,12 @@ function addInterceptFor(method: HttpMethod) {
         const status = opts.status ?? 400;
         register(method, path, () => {
           if (opts.body === undefined) {
-            return new HttpResponse(null, { status, headers: opts.headers });
+            return new HttpResponse(null, makeInit(status, opts.headers));
           }
-          return HttpResponse.json(opts.body as Exclude<T, undefined>, {
-            status,
-            headers: opts.headers,
-          });
+          return HttpResponse.json(
+            opts.body as Exclude<T, undefined>,
+            makeInit(status, opts.headers)
+          );
         });
       },
 
@@ -184,7 +196,7 @@ function addInterceptFor(method: HttpMethod) {
           if (delayMs === undefined) return never; // hang forever
           return new Promise<Response>((resolve) => {
             setTimeout(
-              () => resolve(new HttpResponse(null, { status, headers })),
+              () => resolve(new HttpResponse(null, makeInit(status, headers))),
               Math.max(0, delayMs)
             );
           });

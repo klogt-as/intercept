@@ -66,6 +66,7 @@ function findHandler(
 
   for (let i = _handlers.length - 1; i >= 0; i--) {
     const h = _handlers[i];
+    if (!h) continue;
     if (h.method !== method) continue;
 
     const m = matchPattern(h.compiled, remainder);
@@ -162,10 +163,12 @@ export const server = {
   close() {
     // Detach adapters in reverse order
     for (let i = _adapters.length - 1; i >= 0; i--) {
+      const adapter = _adapters[i];
+      if (!adapter) continue;
       try {
-        _adapters[i].detach();
+        adapter.detach();
       } catch {
-        // ignore
+        // ignore errors from adapter cleanup
       }
     }
     _adapters.length = 0;
