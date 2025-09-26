@@ -1,7 +1,7 @@
 {
   "name": "@klogt/intercept",
   "version": "0.1.0",
-  "description": "Intercept for frontend tests: record/replay HTTP, deterministic clock/RNG/storage for clean, mock-free React Testing Library and Vitest/Jest tests.",
+  "description": "Small but powerful HTTP interception for frontend tests — MSW-flavored, built for Node 20+ with native fetch. Declare routes inline, return typed JSON, and intercept both fetch and Axios for fast, mock-free testing.",
   "type": "module",
   "license": "MIT",
   "homepage": "https://github.com/klogt-as/intercept#readme",
