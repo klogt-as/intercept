@@ -74,8 +74,8 @@ beforeAll(() => {
   });
 
   // Optional: attach an axios instance to be intercepted by the same routes
-  const ax = axios.create({ baseURL: "http://localhost" });
-  server.attachAdapter(createAxiosAdapter(ax));
+  const instance = axios.create({ baseURL: "http://localhost" });
+  server.attachAdapter(createAxiosAdapter(instance));
 });
 
 afterEach(() => {
@@ -231,8 +231,8 @@ server.listen({ onUnhandledRequest: "warn" });
 import axios from "axios";
 import { createAxiosAdapter } from "@klogt/intercept/axios";
 
-const ax = axios.create({ baseURL: "http://localhost" });
-server.attachAdapter(createAxiosAdapter(ax));
+const instance = axios.create({ baseURL: "http://localhost" });
+server.attachAdapter(createAxiosAdapter(instance));
 ```
 
 **No runtime axios dependency**: the adapter’s types reference `axios` conditionally so your library/app doesn’t pull axios unless you install it yourself.
