@@ -4,13 +4,13 @@
   "description": "Intercept for frontend tests: record/replay HTTP, deterministic clock/RNG/storage for clean, mock-free React Testing Library and Vitest/Jest tests.",
   "type": "module",
   "license": "MIT",
-  "homepage": "https://github.com/klogt/intercept#readme",
+  "homepage": "https://github.com/klogt-as/intercept#readme",
   "bugs": {
-    "url": "https://github.com/klogt/intercept/issues"
+    "url": "https://github.com/klogt-as/intercept/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/klogt/intercept.git"
+    "url": "git+https://github.com/klogt-as/intercept.git"
   },
   "author": "Klogt <markus.remmen@klogt.no>",
   "keywords": [

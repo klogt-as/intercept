@@ -1,8 +1,15 @@
 # @klogt/intercept
 
-Small, MSW‑flavored HTTP interception for tests — built for **Node 20+** (native `fetch`). Declare routes, return typed JSON, attach client adapters (e.g. Axios) — and keep your tests fast, deterministic, and free of manual mocks.
+Small but powerful — MSW-flavored HTTP interception for tests, built for **Node 20+** with native `fetch`.  
+Write routes inline, return typed JSON, and plug in clients like Axios — all while keeping tests fast, reliable, and free of mocks.
 
-> Works great with **Vitest/Jest + React Testing Library**.
+✅ Declare routes directly in your tests  
+✅ Get typed JSON responses with the right status codes  
+✅ Intercept both `fetch` and your favorite clients (Axios, etc.)  
+✅ Reset state between tests for rock-solid isolation  
+
+Built for **modern frontend testing** — fast, deterministic, and frustration-free.  
+Perfect companion for **Vitest/Jest + React Testing Library**.
 
 ---
 
