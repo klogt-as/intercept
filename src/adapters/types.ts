@@ -2,7 +2,7 @@
 /** biome-ignore-all lint/suspicious/noTsIgnore: <allow missing axios types> */
 /** biome-ignore-all lint/suspicious/noExplicitAny: <allow missing axios types> */
 
-export type MinimalAxiosHeaders = Record<string, string>;
+type MinimalAxiosHeaders = Record<string, string>;
 
 export type MinimalAxiosConfig = {
   url?: string;

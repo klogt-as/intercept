@@ -22,7 +22,14 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "lcov"],
       reportsDirectory: "coverage",
-      exclude: ["**/dist/**", "**/*.test.ts", "**/*.spec.ts"],
+      exclude: [
+        "**/dist/**",
+        "**/*.test.ts",
+        "**/*.spec.ts",
+        "**/*.config.ts",
+        "**/types.ts",
+        "src/index.ts",
+      ],
     },
   },
 });

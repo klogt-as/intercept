@@ -11,7 +11,7 @@ import { HttpResponse } from "../http/response";
  * Shape of a dynamic resolver. You get the raw `Request`, the parsed `URL`,
  * extracted path `params`, and (best-effort) parsed JSON `body`.
  */
-export type DynamicResolver<TRequest = unknown> = (args: {
+type DynamicResolver<TRequest = unknown> = (args: {
   request: Request;
   url: URL;
   params: Record<string, string>;
@@ -63,7 +63,7 @@ async function toResolverArgs<TReq>(
 }
 
 /** Optional init for successful JSON responses. */
-export type ResolveInit = {
+type ResolveInit = {
   /**
    * HTTP status to use. If omitted, a method-appropriate default is used (e.g. 201 for POST).
    * If you pick 204, the body will be ignored and a `null` body will be sent.
@@ -77,7 +77,7 @@ export type ResolveInit = {
  * Optional init for error responses.
  * @template T JSON type for the error body (or `undefined` for no body).
  */
-export type RejectInit<T extends JsonBodyType | undefined = JsonBodyType> = {
+type RejectInit<T extends JsonBodyType | undefined = JsonBodyType> = {
   /** An error status like 400, 401, 403, 404, 409, 422, 500, ... */
   status?: number;
   /** Optional JSON body for the error. Use `undefined` for no body. */
@@ -87,7 +87,7 @@ export type RejectInit<T extends JsonBodyType | undefined = JsonBodyType> = {
 };
 
 /** Optional init for pending/loading simulation. */
-export type FetchingInit = {
+type FetchingInit = {
   /**
    * Delay (ms) before resolving. If omitted, the promise never resolves to simulate an indefinitely pending request.
    */
