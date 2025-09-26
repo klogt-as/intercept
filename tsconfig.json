@@ -1,0 +1,26 @@
+// tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2022", // Node 20 støtter dette komfortabelt
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
+    "moduleDetection": "force",
+
+    "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedIndexedAccess": true,
+
+    "resolveJsonModule": true,
+    "types": ["node"],
+
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+
+    // Viktig: la tsdown ta seg av output
+    "noEmit": true
+  },
+  "include": ["src", "vitest.config.ts", "vite.config.ts"]
+}

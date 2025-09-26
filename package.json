@@ -1,0 +1,75 @@
+{
+  "name": "@klogt/intercept",
+  "version": "0.1.0",
+  "description": "Intercept for frontend tests: record/replay HTTP, deterministic clock/RNG/storage for clean, mock-free React Testing Library and Vitest/Jest tests.",
+  "type": "module",
+  "license": "MIT",
+  "homepage": "https://github.com/klogt/intercept#readme",
+  "bugs": {
+    "url": "https://github.com/klogt/intercept/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/klogt/intercept.git"
+  },
+  "author": "Klogt <markus.remmen@klogt.no>",
+  "keywords": [
+    "testing",
+    "intercept",
+    "record",
+    "replay",
+    "vcr",
+    "rtl",
+    "jest",
+    "vitest",
+    "fetch",
+    "xhr",
+    "mockless"
+  ],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./adapters/axios": {
+      "types": "./dist/adapters/axios.d.ts",
+      "import": "./dist/adapters/axios.js"
+    },
+    "./adapters/fetch": {
+      "types": "./dist/adapters/fetch.d.ts",
+      "import": "./dist/adapters/fetch.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "test": "vitest",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build",
+    "release": "bumpp && npm publish"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.2.4",
+    "@types/node": "^22.15.17",
+    "bumpp": "^10.1.0",
+    "tsdown": "^0.11.9",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.3"
+  }
+}
