@@ -33,15 +33,15 @@ Modern frontend apps talk to APIs. In tests, you want predictable responses with
 - **Unhandled strategies**: warn, bypass, or error
 - **Composable**: `server.use(...)`, `server.resetHandlers()`, `server.close()`
 - **Adapters**: attach Axios (or write your own) so the same routes cover both `fetch` and your client
-- **TypeScript‑first**: no `any` in public API; path params are inferred
+- **TypeScript-first**: no `any` in public API; path params are inferred
 
-> ⚠️ Recording/replay is on the roadmap; the core here focuses on in‑memory declarative routes.
+> ⚠️ Recording/replay is on the roadmap; the core here focuses on in-memory declarative routes.
 
 ---
 
 ## Requirements
 
-- **Node 20+** (uses built‑in `fetch`)
+- **Node 20+** (uses built-in `fetch`)
 - Test runner: **Vitest** or **Jest**
 
 ---
@@ -169,7 +169,7 @@ it("renders mocked users", async () => {
 });
 ```
 
-This way, your component and React Query behave as if the API responded, but everything is handled in‑memory with `@klogt/intercept`.
+This way, your component and React Query behave as if the API responded, but everything is handled in-memory with `@klogt/intercept`.
 
 ---
 
@@ -192,10 +192,53 @@ intercept.get("/profile").resolve({ id: "me" }, {
 });
 ```
 
+### Simulate fetching / pending state
+
+Sometimes you want to test a **loading state** by simulating a request that never resolves, or resolves after a delay.  
+Use `.fetching()`:
+
+```ts
+// Request hangs forever (never resolves)
+intercept.get("/slow").fetching();
+
+// Resolves after 800ms with status 204 (no content)
+intercept.get("/slow").fetching({ delayMs: 800 });
+
+// Resolve after 500ms with a 200 + custom headers
+intercept.get("/slow").fetching({ delayMs: 500, status: 200, headers: { "x-test": "ok" } });
+```
+
+Example with React:
+
+```tsx
+// In your test
+it("shows loading state while fetching", async () => {
+  intercept.get("/users").fetching({ delayMs: 800 });
+
+
+  const client = new QueryClient();
+  render(
+    <QueryClientProvider client={client}>
+      <Users />
+    </QueryClientProvider>
+  );
+
+  // Immediately see the loading indicator
+  expect(screen.getByText("Loading...")).toBeInTheDocument();
+
+  // After ~800ms the query resolves and data appears
+  await waitFor(() => {
+    expect(screen.getByText("Ada")).toBeInTheDocument();
+  });
+});
+```
+
+---
+
 ### Path params & wildcards
 
 - `":id"` style params are supported: `"/users/:id"`
-- Catch‑all: `"/*"` (relative to your `baseUrl`)
+- Catch-all: `"/*"` (relative to your `baseUrl`)
 
 Access to `request`, `url`, `params`, and parsed `json` is available in dynamic resolvers (see below).
 
@@ -319,11 +362,10 @@ Requires **Node 20+** (native `fetch`). Older Node versions are unsupported.
 ## Roadmap
 
 - HTTP record/replay helpers
-- Devtools‑style inspector for requests/responses
+- Devtools-style inspector for requests/responses
 
 ---
 
 ## License
 
 MIT © Klogt
-
