@@ -2,7 +2,19 @@
 /** biome-ignore-all lint/suspicious/noTsIgnore: <allow missing axios types> */
 /** biome-ignore-all lint/suspicious/noExplicitAny: <allow missing axios types> */
 
-type MinimalAxiosHeaders = Record<string, string>;
+/**
+ * Permissive header map — accepts common shapes you might see in user code.
+ * We normalize them into a WHATWG Headers instance at the adapter boundary.
+ */
+type MinimalAxiosHeaderValue =
+  | string
+  | number
+  | boolean
+  | Date
+  | unknown
+  | Array<string | number | boolean | Date | unknown>;
+
+type MinimalAxiosHeaders = Record<string, MinimalAxiosHeaderValue>;
 
 export type MinimalAxiosConfig = {
   url?: string;

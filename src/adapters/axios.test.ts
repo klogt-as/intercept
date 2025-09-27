@@ -38,10 +38,10 @@ function createAxiosStub() {
 }
 
 /** -----------------------------
- * Testhjelpere
+ * Test helpers
  * ------------------------------*/
 function stubOriginalFetchReturning(text: string, init?: ResponseInit) {
-  // Serveren auto-attacher fetch-adapter i listen(); sørg for forutsigbar passthrough
+  // Server auto-attaches the fetch-adapter on listen(); ensure predictable passthrough
   const original = vi.fn(async () => new Response(text, init));
   globalThis.fetch = original;
   return original;
@@ -57,7 +57,7 @@ afterEach(() => {
 });
 
 describe("axios adapter + intercept", () => {
-  it("resolve(): default status per metode og mapping til AxiosResponse", async () => {
+  it("resolve(): default status per method and mapping to AxiosResponse", async () => {
     const { axios } = createAxiosStub();
     stubOriginalFetchReturning("should-not-be-called");
     server.listen({ baseUrl: "http://api.test", onUnhandledRequest: "error" });
@@ -103,7 +103,7 @@ describe("axios adapter + intercept", () => {
     expect(res.data).toEqual({ message: "Not found" });
   });
 
-  it("handle(): params + JSON-body fungerer (201)", async () => {
+  it("handle(): params + JSON body works (201)", async () => {
     const { axios } = createAxiosStub();
     stubOriginalFetchReturning("should-not-be-called");
     server.listen({
@@ -131,22 +131,22 @@ describe("axios adapter + intercept", () => {
     expect(res.data).toEqual({ id: "42", ok: true, echo: { name: "Ada" } });
   });
 
-  it('unhandled "warn": logger og kaller original adapter', async () => {
+  it('unhandled "warn": logs and calls original adapter', async () => {
     const { axios, calls } = createAxiosStub();
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    // 204-body er tom, så bruk 200 i passthrough for å kunne lese tekst
+    // 204 might yield empty body, use 200 in passthrough to read text if needed
     stubOriginalFetchReturning("OK", { status: 200 });
 
     server.listen({ baseUrl: "http://api.test", onUnhandledRequest: "warn" });
     server.attachAdapter(createAxiosAdapter(axios));
 
     const res = await axios.request({ url: "/no-handler", method: "get" });
-    expect(res.status).toBe(299); // fra original axios-adapter
+    expect(res.status).toBe(299); // from original axios adapter
     expect(calls.configs).toHaveLength(1);
     expect(warnSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('unhandled "bypass": ingen logging, kaller original adapter', async () => {
+  it('unhandled "bypass": no logging, calls original adapter', async () => {
     const { axios, calls } = createAxiosStub();
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -162,7 +162,7 @@ describe("axios adapter + intercept", () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
-  it('unhandled "error": kaster axios-lignende feil med 501 og detaljer', async () => {
+  it('unhandled "error": throws axios-like error with 501 and details', async () => {
     const { axios } = createAxiosStub();
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     stubOriginalFetchReturning("SHOULD-NOT", { status: 200 });
@@ -189,13 +189,13 @@ describe("axios adapter + intercept", () => {
     expect(errSpy).toHaveBeenCalledTimes(1);
   });
 
-  it("JSON-serialisering når data ikke er BodyInit + automatisk content-type", async () => {
+  it("JSON serialization when data is not BodyInit + automatic content-type", async () => {
     const { axios } = createAxiosStub();
     stubOriginalFetchReturning("should-not-be-called");
     server.listen({ baseUrl: "http://api.test", onUnhandledRequest: "error" });
     server.attachAdapter(createAxiosAdapter(axios));
 
-    // Echo-endepunkt via intercept for å verifisere faktisk body og header
+    // Echo endpoint via intercept to verify actual body and header
     intercept.post("/echo").handle(async ({ body, request }) => {
       return new Response(
         JSON.stringify({
@@ -216,7 +216,7 @@ describe("axios adapter + intercept", () => {
     expect(res.data).toEqual({ ctype: "application/json", body: { a: 1 } });
   });
 
-  it("matcher ruter relativt til baseUrl med path-prefiks", async () => {
+  it("matches routes relative to baseUrl with path prefix", async () => {
     const { axios } = createAxiosStub();
     axios.defaults.baseURL = "http://api.test/prefix/api";
     stubOriginalFetchReturning("should-not-be-called");
@@ -239,7 +239,7 @@ describe("axios adapter + intercept", () => {
     expect(res.data).toEqual({ id: "123", ok: true });
   });
 
-  it("detachAdapter() reverterer til original adapter", async () => {
+  it("detachAdapter() reverts to original adapter", async () => {
     const { axios, originalAdapter } = createAxiosStub();
     stubOriginalFetchReturning("OK", { status: 200 });
 
@@ -253,6 +253,240 @@ describe("axios adapter + intercept", () => {
     expect(axios.defaults.adapter).toBe(originalAdapter);
 
     const res = await axios.request({ url: "/still-works", method: "get" });
-    expect(res.status).toBe(299); // original adapter svar
+    expect(res.status).toBe(299); // original adapter response
+  });
+
+  /** -----------------------------
+   * Additional tests to improve branch coverage
+   * ------------------------------*/
+
+  function createAxiosStubWithoutOriginal() {
+    const axios: MinimalAxiosInstance = {
+      defaults: {
+        // No adapter here on purpose
+        baseURL: "http://api.test",
+      },
+      request: async (config) => {
+        const adapter = axios.defaults.adapter;
+        if (!adapter) throw new Error("No adapter configured");
+        return adapter(config);
+      },
+    };
+    return { axios };
+  }
+
+  it('unhandled "warn" without original adapter -> throws axios-like error (500)', async () => {
+    const { axios } = createAxiosStubWithoutOriginal();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    stubOriginalFetchReturning("OK", { status: 200 });
+
+    server.listen({ baseUrl: "http://api.test", onUnhandledRequest: "warn" });
+    server.attachAdapter(createAxiosAdapter(axios));
+
+    await expect(
+      axios.request({ url: "/no-handler", method: "get" }),
+    ).rejects.toMatchObject({
+      isAxiosError: true,
+      response: { status: 500, data: expect.anything() },
+    });
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('unhandled "bypass" without original adapter -> throws axios-like error (500)', async () => {
+    const { axios } = createAxiosStubWithoutOriginal();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    stubOriginalFetchReturning("OK", { status: 200 });
+
+    server.listen({ baseUrl: "http://api.test", onUnhandledRequest: "bypass" });
+    server.attachAdapter(createAxiosAdapter(axios));
+
+    await expect(
+      axios.request({ url: "/no-handler", method: "get" }),
+    ).rejects.toMatchObject({
+      isAxiosError: true,
+      response: { status: 500, data: expect.anything() },
+    });
+
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it("permissive headers: arrays, numbers, booleans, Date, objects are normalized", async () => {
+    const { axios } = createAxiosStub();
+    stubOriginalFetchReturning("should-not-be-called");
+    server.listen({ baseUrl: "http://api.test", onUnhandledRequest: "error" });
+    server.attachAdapter(createAxiosAdapter(axios));
+
+    intercept.post("/headers-echo").handle(async ({ request }) => {
+      const entries = Object.fromEntries(request.headers.entries());
+      return new Response(JSON.stringify(entries), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+
+    const testDate = new Date("2020-01-01T00:00:00Z");
+
+    const res = await axios.request({
+      url: "/headers-echo",
+      method: "post",
+      headers: {
+        "x-arr": ["a", "b"],
+        "x-num": 42 as unknown as string,
+        "x-bool": false as unknown as string,
+        "x-date": testDate as unknown as string,
+        "x-obj": { a: 1 } as unknown as string,
+      } as unknown as Record<string, string>,
+      data: { ok: true },
+    });
+
+    expect(res.status).toBe(200);
+
+    const data = res.data as Record<string, string>;
+
+    // Arrays become comma-separated by the WHATWG Headers implementation
+    expect(data["x-arr"]).toBe("a, b");
+    expect(data["x-num"]).toBe("42");
+    expect(data["x-bool"]).toBe("false");
+    expect(data["x-date"]).toBe(testDate.toUTCString());
+    expect(data["x-obj"]).toBe(JSON.stringify({ a: 1 }));
+  });
+
+  it("responseToAxios parses vendor JSON, text/* and binary correctly", async () => {
+    const { axios } = createAxiosStub();
+    stubOriginalFetchReturning("should-not-be-called");
+    server.listen({ baseUrl: "http://api.test", onUnhandledRequest: "error" });
+    server.attachAdapter(createAxiosAdapter(axios));
+
+    // vendor JSON
+    intercept.get("/vjson").handle(async () => {
+      return new Response(JSON.stringify({ kind: "hal" }), {
+        status: 200,
+        headers: { "content-type": "application/hal+json; charset=utf-8" },
+      });
+    });
+
+    // text/*
+    intercept.get("/vtext").handle(async () => {
+      return new Response("hello", {
+        status: 200,
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      });
+    });
+
+    // binary (no json/text)
+    intercept.get("/vbin").handle(async () => {
+      const buf = new Uint8Array([1, 2, 3]);
+      return new Response(buf, {
+        status: 200,
+        headers: { "content-type": "application/octet-stream" },
+      });
+    });
+
+    const j = await axios.request({ url: "/vjson", method: "get" });
+    expect(j.data).toEqual({ kind: "hal" });
+
+    const t = await axios.request({ url: "/vtext", method: "get" });
+    expect(t.data).toBe("hello");
+
+    const b = await axios.request({ url: "/vbin", method: "get" });
+    expect(b.data).toBeInstanceOf(ArrayBuffer);
+    expect(Array.from(new Uint8Array(b.data as ArrayBuffer))).toEqual([
+      1, 2, 3,
+    ]);
+  });
+
+  it("GET/HEAD should not send a body nor auto-set content-type", async () => {
+    const { axios } = createAxiosStub();
+    stubOriginalFetchReturning("should-not-be-called");
+    server.listen({ baseUrl: "http://api.test", onUnhandledRequest: "error" });
+    server.attachAdapter(createAxiosAdapter(axios));
+
+    intercept.get("/no-body").handle(async ({ request }) => {
+      const ctype = request.headers.get("content-type");
+      const text = await request.text(); // if body was sent, this would read it
+      return new Response(JSON.stringify({ ctype, len: text.length }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+
+    const res = await axios.request({
+      url: "/no-body",
+      method: "get",
+      // data provided, but MUST be ignored for GET
+      data: { willBeIgnored: true },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.data).toEqual({ ctype: null, len: 0 });
+  });
+
+  it("BodyInit detection: URLSearchParams should be sent as raw body", async () => {
+    const { axios } = createAxiosStub();
+    stubOriginalFetchReturning("should-not-be-called");
+    server.listen({ baseUrl: "http://api.test", onUnhandledRequest: "error" });
+    server.attachAdapter(createAxiosAdapter(axios));
+
+    intercept.post("/form").handle(async ({ request }) => {
+      const text = await request.text();
+      return new Response(JSON.stringify({ text }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+
+    const params = new URLSearchParams([
+      ["a", "1"],
+      ["b", "x y"],
+    ]);
+    const res = await axios.request({
+      url: "/form",
+      method: "post",
+      data: params, // BodyInit path
+    });
+
+    expect(res.status).toBe(200);
+
+    const data = res.data as Record<string, string>;
+
+    expect(data.text).toBe("a=1&b=x+y");
+  });
+
+  it("baseURL precedence: config.baseURL > instance.defaults.baseURL > server base", async () => {
+    const { axios } = createAxiosStub();
+    stubOriginalFetchReturning("should-not-be-called");
+
+    // Server base at /a
+    server.listen({
+      baseUrl: "http://api.test/a",
+      onUnhandledRequest: "error",
+    });
+    server.attachAdapter(createAxiosAdapter(axios));
+
+    // Route available under /a
+    intercept.get("/ping").resolve({ ok: true });
+
+    // Case 1: instance default points elsewhere; config.baseURL correct → must win
+    axios.defaults.baseURL = "http://api.test/wrong";
+    const r1 = await axios.request({
+      url: "/ping",
+      method: "get",
+      baseURL: "http://api.test/a",
+    });
+    expect(r1.status).toBe(200);
+    expect(r1.data).toEqual({ ok: true });
+
+    // Case 2: no config.baseURL; instance.defaults matches server → should work
+    axios.defaults.baseURL = "http://api.test/a";
+    const r2 = await axios.request({ url: "/ping", method: "get" });
+    expect(r2.status).toBe(200);
+
+    // Case 3: neither config nor instance; server base fallback still works
+    axios.defaults.baseURL = undefined;
+    const r3 = await axios.request({ url: "/ping", method: "get" });
+    expect(r3.status).toBe(200);
   });
 });

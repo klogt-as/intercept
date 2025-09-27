@@ -56,6 +56,56 @@ function combineURLs(baseURL: string, relativeURL: string): string {
   return `${baseURL.replace(/\/+$/, "")}/${relativeURL.replace(/^\/+/, "")}`;
 }
 
+/**
+ * Build a Headers instance from a permissive "axios-like" headers object.
+ * - Accepts string, number, boolean, and arrays of those.
+ * - Normalizes everything to strings.
+ * - When an array is provided, uses multiple header values (append).
+ */
+function buildHeadersFromAxiosHeaders(
+  headersLike: Record<string, unknown> | undefined,
+): Headers {
+  const headers = new Headers();
+  if (!headersLike) return headers;
+
+  for (const [key, raw] of Object.entries(headersLike)) {
+    if (raw == null) continue;
+
+    const appendValue = (v: unknown) => {
+      // Avoid "[object Object]" — only allow primitives; fallback to JSON for objects
+      if (typeof v === "string") headers.append(key, v);
+      else if (typeof v === "number" || typeof v === "boolean")
+        headers.append(key, String(v));
+      else if (v instanceof Date) headers.append(key, v.toUTCString());
+      else headers.append(key, JSON.stringify(v));
+    };
+
+    if (Array.isArray(raw)) {
+      for (const item of raw) appendValue(item);
+    } else {
+      appendValue(raw);
+    }
+  }
+
+  return headers;
+}
+
+/**
+ * Construct a minimal Axios-like error with a synthetic response.
+ */
+function makeAxiosError(
+  message: string,
+  config: MinimalAxiosConfig,
+  response: MinimalAxiosResponse,
+): MinimalAxiosError {
+  const err: MinimalAxiosError = Object.assign(new Error(message), {
+    isAxiosError: true as const,
+    response,
+    config,
+  });
+  return err;
+}
+
 // ------------------------------------------------------------
 // Adapter
 // ------------------------------------------------------------
@@ -71,26 +121,33 @@ function combineURLs(baseURL: string, relativeURL: string): string {
  * - "bypass": call the original axios adapter
  * - "error": reject with a 501-like AxiosError
  *
+ * When "warn"/"bypass" is requested but there is no original adapter,
+ * this adapter throws an Axios-like error with a synthetic 500 response.
+ *
  * Type compatibility:
  * - Accepts both a minimal, stubbed instance (our types) and a real
  *   `axios.AxiosInstance` without adding a runtime dependency on axios.
  */
 export function createAxiosAdapter(instance: AxiosLikeInstance): Adapter {
-  // Løst-typet original adapter slik at vi kan håndtere både ekte axios og stub
+  // Loosely-typed original adapter so we can handle both real axios and stub
   let originalAdapter: AnyAxiosAdapter | null = null;
 
   /**
    * Convert a Fetch Response -> AxiosResponse (structure expected by axios).
-   * We stick to our minimal wire-format so we don't depend on axios' internal types.
+   * Robust Content-Type handling:
+   * - Treat any content type that *contains* "json" as JSON (e.g. application/hal+json)
+   * - text/* -> text()
+   * - otherwise -> arrayBuffer()
    */
   async function responseToAxios(
     config: MinimalAxiosConfig | any,
     res: Response,
   ): Promise<MinimalAxiosResponse> {
     const ct = res.headers.get("content-type") || "";
-    const data: unknown = ct.includes("application/json")
+    const lower = ct.toLowerCase();
+    const data: unknown = lower.includes("json")
       ? await res.json()
-      : ct.startsWith("text/")
+      : lower.startsWith("text/")
         ? await res.text()
         : await res.arrayBuffer();
 
@@ -123,6 +180,8 @@ export function createAxiosAdapter(instance: AxiosLikeInstance): Adapter {
    *
    * Axios semantics are preserved: relative URL joined with baseURL,
    * leading "/" does NOT drop the base path prefix.
+   *
+   * Also builds headers robustly from "axios-like" shapes (arrays, numbers, booleans).
    */
   function axiosConfigToRequest(
     config: MinimalAxiosConfig,
@@ -142,7 +201,9 @@ export function createAxiosAdapter(instance: AxiosLikeInstance): Adapter {
     }
 
     const method = String(config.method || "get").toUpperCase();
-    const headers = new Headers((config.headers ?? {}) as HeadersInit);
+    const headers = buildHeadersFromAxiosHeaders(
+      (config.headers ?? {}) as Record<string, unknown>,
+    );
 
     let body: BodyInit | null = null;
     if (config.data != null && method !== "GET" && method !== "HEAD") {
@@ -163,12 +224,12 @@ export function createAxiosAdapter(instance: AxiosLikeInstance): Adapter {
     attach(core: CoreForAdapter) {
       if (originalAdapter) return;
 
-      // Narrow til en strukturelt kompatibel form og lagre original adapter
+      // Narrow to a structurally compatible form and store original adapter
       const anyInst = instance as CompatibleAxiosInstance;
       originalAdapter = anyInst.defaults.adapter ?? null;
 
       anyInst.defaults.adapter = async (config: any) => {
-        // NB: `config` er `any` her for å støtte både ekte axios og stub.
+        // NB: `config` is `any` here to support both real axios and stub.
         const req = axiosConfigToRequest(
           config as MinimalAxiosConfig,
           core.getOptions().baseUrl,
@@ -185,31 +246,32 @@ export function createAxiosAdapter(instance: AxiosLikeInstance): Adapter {
           request: req,
           url,
         });
-        if (strategy === "warn") {
-          core.logUnhandled("warn", req, url);
-          return originalAdapter
-            ? originalAdapter(config)
-            : responseToAxios(
-                config,
-                HttpResponse.json(
-                  { error: "No axios adapter configured" },
-                  { status: 500 },
-                ),
-              );
-        }
-        if (strategy === "bypass") {
-          return originalAdapter
-            ? originalAdapter(config)
-            : responseToAxios(
-                config,
-                HttpResponse.json(
-                  { error: "No axios adapter configured" },
-                  { status: 500 },
-                ),
-              );
+
+        if (strategy === "warn" || strategy === "bypass") {
+          // In both "warn" and "bypass" we prefer delegating to the original adapter if present.
+          if (strategy === "warn") {
+            core.logUnhandled("warn", req, url);
+          }
+          if (originalAdapter) {
+            return originalAdapter(config);
+          }
+
+          // No original adapter available — throw an Axios-like error with synthetic 500
+          const synthetic = await responseToAxios(
+            config,
+            HttpResponse.json(
+              { error: "No axios adapter configured for passthrough" },
+              { status: 500 },
+            ),
+          );
+          throw makeAxiosError(
+            "No axios adapter configured",
+            config as MinimalAxiosConfig,
+            synthetic,
+          );
         }
 
-        // error -> reject like axios would on HTTP error
+        // strategy === "error" -> reject like axios would on HTTP error
         core.logUnhandled("error", req, url);
         const res = HttpResponse.json(
           {
@@ -224,15 +286,11 @@ export function createAxiosAdapter(instance: AxiosLikeInstance): Adapter {
         );
         const axiosRes = await responseToAxios(config, res);
 
-        const err: MinimalAxiosError = Object.assign(
-          new Error("Request blocked by test server (unhandled)"),
-          {
-            isAxiosError: true as const,
-            response: axiosRes,
-            config,
-          },
+        throw makeAxiosError(
+          "Request blocked by test server (unhandled)",
+          config as MinimalAxiosConfig,
+          axiosRes,
         );
-        throw err;
       };
     },
     detach() {
