@@ -35,8 +35,6 @@ Modern frontend apps talk to APIs. In tests, you want predictable responses with
 - **Adapters**: attach Axios (or write your own) so the same routes cover both `fetch` and your client
 - **TypeScript-first**: no `any` in public API; path params are inferred
 
-> ⚠️ Recording/replay is on the roadmap; the core here focuses on in-memory declarative routes.
-
 ---
 
 ## Requirements
@@ -67,40 +65,34 @@ No need to install `axios` unless you plan to attach the Axios adapter.
 
 ## Quick start (Vitest)
 
-Create a test setup file, e.g. `tests/setup.ts`:
+### Required setup
+
+`intercept` will **not work** until you start the server in your test environment.  
+The recommended way is to create a shared setup file (e.g. `setupTests.ts`) and call `server.listen()` there:
 
 ```ts
-import { server, intercept } from "@klogt/intercept";
-import { createAxiosAdapter } from "@klogt/intercept/axios"; // optional
-import axios from "axios"; // only if you want the axios adapter
+// setupTests.ts
+import { server } from "@klogt/intercept";
 
 beforeAll(() => {
-  server.listen({
-    baseUrl: "http://localhost", // used for relative paths
-    onUnhandledRequest: "warn",   // "warn" | "bypass" | "error"
-  });
-
-  // Optional: attach an axios instance to be intercepted by the same routes
-  const instance = axios.create({ baseURL: "http://localhost" });
-  server.attachAdapter(createAxiosAdapter(instance));
+  server.listen({ baseUrl: "http://localhost" });
 });
 
 afterEach(() => {
-  server.resetHandlers(); // keep each test self-contained
+  server.resetHandlers();
 });
 
 afterAll(() => {
   server.close();
 });
-
-// Example routes you can reuse per test or override in tests
-intercept.get("/users").resolve([{ id: 1, name: "Ada" }]);
 ```
 
-Then in your test:
+Create a test file, e.g. `tests/users.test.ts`:
 
 ```ts
 it("renders users from API", async () => {
+  // Example routes you can reuse per test or override in tests
+  intercept.get("/users").resolve([{ id: 1, name: "Ada" }]);
   // Your component calls fetch('/users') underneath
   // The declared route above returns 200 with the JSON array
 });
@@ -143,7 +135,7 @@ export function Users() {
 
 ```tsx
 // Users.test.tsx
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Users } from "./Users";
 import { intercept } from "@klogt/intercept";
@@ -162,10 +154,8 @@ it("renders mocked users", async () => {
     </QueryClientProvider>
   );
 
-  await waitFor(() => {
-    expect(screen.getByText("Ada")).toBeInTheDocument();
-    expect(screen.getByText("Grace")).toBeInTheDocument();
-  });
+  expect(await screen.findByText("Ada")).toBeInTheDocument();
+  expect(await screen.findByText("Grace")).toBeInTheDocument();
 });
 ```
 
@@ -227,9 +217,7 @@ it("shows loading state while fetching", async () => {
   expect(screen.getByText("Loading...")).toBeInTheDocument();
 
   // After ~800ms the query resolves and data appears
-  await waitFor(() => {
-    expect(screen.getByText("Ada")).toBeInTheDocument();
-  });
+  expect(await screen.findByText("Ada")).toBeInTheDocument();
 });
 ```
 
