@@ -261,8 +261,8 @@ intercept.ignore(paths: ReadonlyArray<Path>)
 // Ignore analytics and health check endpoints
 intercept.ignore(['/analytics', '/ping', '/health-check']);
 
-// Can be called in beforeAll
-beforeAll(() => {
+// Must be called inside a beforeEach
+beforeEach(() => {
   intercept.ignore(['/metrics', '/analytics/*']);
 });
 ```
@@ -381,9 +381,42 @@ Requires **Node 20+** (native `fetch`). Older Node versions are unsupported.
 
 ## Roadmap
 
-- HTTP record/replay helpers
-- Devtools-style inspector for requests/responses
+- **HTTP record/replay helpers**
+- **Devtools-style inspector for requests/responses**
 
+### DX improvements (planned)
+
+- **Subtle warnings for unhandled requests**  
+  Reduce terminal noise by making warnings less intrusive, while still visible.  
+
+- **Better support for relative paths**  
+  Improve type hints so developers can see how relative paths resolve with `baseUrl` from config in server.listen({ baseUrl: "http://pokeApi"}).  
+  ```ts
+  intercept.get("/api/v2/pokemon");
+  // Hint: resolved full URL → http://pokeApi/api/v2/pokemon
+  ```
+
+- **Clearer type errors for URL paths**  
+  Replace cryptic TS errors with actionable hints.  
+  ```
+  URL paths in intercept must start with "/". Did you mean "/api/v2/pokemon"?
+  ```
+
+- **Documentation for server setup in tests**  
+  Add README examples for using `setupTest.ts` / `setup.test.ts`, showing that  
+  `server.listen()` must be called for `intercept` to work.  
+
+- **Typed response examples in README**  
+  Show how to specify the response type to prevent debugging issues:  
+  ```ts
+  intercept.get("/api/v2/pokemon").resolve<{ results: Pokemon[] }>({
+    results: [
+      { name: "bulbasaur" },
+      { name: "ivysaur" },
+      { name: "venusaur" },
+    ],
+  });
+  ```
 ---
 
 ## License

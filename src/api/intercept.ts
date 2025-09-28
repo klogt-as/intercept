@@ -250,10 +250,12 @@ export const intercept = {
    * your tests to care about. Each ignored path returns **204 No Content**
    * immediately, so it won’t fail tests that assert “no unhandled requests”.
    *
-   * Can be called at the top of the test file or inside a `beforeAll`.
+   * Must be called inside a `beforeEach`.
    *
    * @example
-   * intercept.ignore(['/analytics', '/ping']);
+   * beforeEach(() => {
+   *  intercept.ignore(['/metrics', '/analytics/*']);
+   * });
    *
    * @param paths List of paths (or route patterns) to ignore.
    *              The type matches your router’s Path type.
