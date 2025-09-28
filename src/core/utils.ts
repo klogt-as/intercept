@@ -1,3 +1,4 @@
+import { INTERCEPT_LOG_PREFIX } from "./constants";
 import type { OnUnhandledRequestStrategy } from "./types";
 
 // -------------------------
@@ -66,13 +67,29 @@ export function matchPattern(
   return params;
 }
 
-export function normalizeBaseUrl(u: string) {
-  const base = new URL(u);
-  // Normalize trailing slash in path (except root).
-  if (base.pathname.endsWith("/") && base.pathname !== "/") {
-    base.pathname = base.pathname.slice(0, -1);
+/**
+ * Ensures baseUrl has no trailing slash.
+ * Throws a clear DX error if invalid.
+ */
+export function validateBaseUrl(baseUrl: string): string {
+  if (typeof baseUrl !== "string" || baseUrl.trim() === "") {
+    throw new Error(
+      `${INTERCEPT_LOG_PREFIX} "baseUrl" must be a non-empty string, but got: ${String(
+        baseUrl,
+      )}`,
+    );
   }
-  return base.toString();
+
+  if (baseUrl.endsWith("/")) {
+    throw new Error(
+      `${INTERCEPT_LOG_PREFIX} Invalid "baseUrl": "${baseUrl}"\n\n` +
+        `→ Remove the trailing slash. Example:\n` +
+        `  ❌ server.listen({ baseUrl: "${baseUrl}" })\n` +
+        `  ✅ server.listen({ baseUrl: "${baseUrl.replace(/\/+$/, "")}" })\n`,
+    );
+  }
+
+  return baseUrl;
 }
 
 export function resolveStrategy(

@@ -1,5 +1,6 @@
 import { createFetchAdapter } from "../adapters/fetch";
 import { logUnhandled } from "./log";
+import { getConfigs, resetConfigs, setConfigs } from "./store";
 import type {
   Adapter,
   HttpMethod,
@@ -10,8 +11,8 @@ import type {
 import {
   compilePattern,
   matchPattern,
-  normalizeBaseUrl,
   tryJson,
+  validateBaseUrl,
 } from "./utils";
 
 // Minimal MSW-like test server (no MSW). Node 20+ (native fetch).
@@ -38,11 +39,6 @@ let _originalFetch: typeof globalThis.fetch | null = null;
 const _handlers: InternalHandler[] = [];
 let _fetchAdapterAttached = false;
 
-let _currentOptions: ListenOptions = {
-  onUnhandledRequest: "warn",
-  baseUrl: "http://localhost",
-};
-
 const _adapters: Adapter[] = [];
 
 // -------------------------
@@ -56,7 +52,8 @@ function findHandler(
   method: HttpMethod,
   url: URL,
 ): { handler: InternalHandler; params: Record<string, string> } | null {
-  const base = new URL(_currentOptions.baseUrl);
+  const configs = getConfigs();
+  const base = new URL(configs.baseUrl);
 
   if (url.origin !== base.origin) return null;
   if (!url.pathname.startsWith(base.pathname)) return null;
@@ -82,7 +79,8 @@ function findHandler(
  * If none matches, returns `{ matched: false }` and lets the adapter decide what to do.
  */
 async function tryHandle(req: Request): Promise<TryHandleResult> {
-  const url = new URL(req.url, _currentOptions.baseUrl);
+  const configs = getConfigs();
+  const url = new URL(req.url, configs.baseUrl);
   const match = findHandler(req.method as HttpMethod, url);
   if (!match) return { matched: false };
 
@@ -108,15 +106,11 @@ export const server = {
    * By default, we attach the Fetch adapter if available and not already attached.
    */
   listen(options: ListenOptions) {
-    // Merge/normalize options
-    const normalized: ListenOptions = {
-      ..._currentOptions,
-      ...options,
-      baseUrl: normalizeBaseUrl(options.baseUrl ?? _currentOptions.baseUrl),
-    };
-    _currentOptions = normalized;
+    setConfigs({
+      baseUrl: validateBaseUrl(options.baseUrl),
+      onUnhandledRequest: options.onUnhandledRequest ?? null,
+    });
 
-    // Ensure fetch adapter is attached once (for most libs, including many GraphQL clients)
     if (
       !_originalFetch &&
       !_fetchAdapterAttached &&
@@ -125,7 +119,13 @@ export const server = {
       const fetchAdapter = createFetchAdapter();
       fetchAdapter.attach({
         tryHandle,
-        getOptions: () => _currentOptions as Required<ListenOptions>,
+        getOptions: () => {
+          const configs = getConfigs();
+          return {
+            baseUrl: configs.baseUrl,
+            onUnhandledRequest: configs.onUnhandledRequest,
+          } as const;
+        },
         logUnhandled,
       });
       _adapters.push(fetchAdapter);
@@ -181,23 +181,21 @@ export const server = {
     }
 
     _handlers.length = 0;
-    _currentOptions = {
-      onUnhandledRequest: "warn",
-      baseUrl: "http://localhost",
-    };
+    resetConfigs();
   },
 
   /**
    * Attach a custom adapter (or one of the helpers like `createAxiosAdapter`).
    *
    * @example
-   *   const ax = axios.create({ baseURL: 'http://localhost' });
-   *   server.attachAdapter(createAxiosAdapter(ax));
+   *   const instance = axios.create({ baseURL: 'http://localhost' });
+   *   server.attachAdapter(createAxiosAdapter(instance));
    */
   attachAdapter(adapter: Adapter) {
+    const configs = getConfigs();
     adapter.attach({
       tryHandle,
-      getOptions: () => _currentOptions as Required<ListenOptions>,
+      getOptions: () => configs,
       logUnhandled,
     });
     _adapters.push(adapter);
@@ -221,13 +219,15 @@ export const server = {
    * Read-only snapshot of the current baseUrl (useful for adapters).
    */
   getBaseUrl(): string {
-    return _currentOptions.baseUrl;
+    const configs = getConfigs();
+    return configs.baseUrl;
   },
 
   /**
    * Read-only snapshot of the current options.
    */
   getOptions(): Readonly<ListenOptions> {
-    return _currentOptions;
+    const configs = getConfigs();
+    return configs;
   },
 };

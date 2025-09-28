@@ -1,12 +1,10 @@
-// -------------------------
-// Logging for unhandled
-// -------------------------
+import { INTERCEPT_LOG_PREFIX } from "./constants";
 
 export function logUnhandled(kind: "warn" | "error", req: Request, url: URL) {
   const lines =
     kind === "warn"
       ? [
-          "🚧 [API] Unhandled request",
+          `🚧 ${INTERCEPT_LOG_PREFIX} Unhandled request`,
           `   → ${req.method} ${url.pathname}${url.search}`,
           "",
           "No intercept handler matched this request.",
@@ -16,7 +14,7 @@ export function logUnhandled(kind: "warn" | "error", req: Request, url: URL) {
           }').resolve(...)`,
         ]
       : [
-          "❌ [API] Unhandled request (error mode)",
+          `❌ ${INTERCEPT_LOG_PREFIX} Unhandled request (error mode)`,
           `   → ${req.method} ${url.pathname}${url.search}`,
           "",
           "No intercept handler matched this request.",
