@@ -200,22 +200,40 @@ describe("server and intercept integration", () => {
     expect(await res.text()).toBe("bypassed");
   });
 
-  it('onUnhandledRequest: "error" logs and returns 501 without passthrough', async () => {
+  it('onUnhandledRequest: "warn" logs and passes through', async () => {
+    const original = stubOriginalFetchReturning(JSON.stringify({ ok: true }), {
+      status: 200,
+    });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    server.listen({ baseUrl: "http://api.test", onUnhandledRequest: "warn" });
+
+    const res = await fetch("http://api.test/not-found-here");
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(original).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(200);
+
+    warnSpy.mockRestore();
+  });
+
+  it('onUnhandledRequest: "error" throws (no passthrough, no 501)', async () => {
     const original = stubOriginalFetchReturning("should-not-be-used", {
       status: 200,
     });
+
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     server.listen({ baseUrl: "http://api.test", onUnhandledRequest: "error" });
 
-    const res = await fetch("http://api.test/not-found-here");
-    expect(errSpy).toHaveBeenCalledTimes(1);
-    expect(original).not.toHaveBeenCalled();
-    expect(res.status).toBe(501);
+    await expect(fetch("http://api.test/not-found-here")).rejects.toThrow(
+      /Unhandled request \(error mode\)/,
+    );
 
-    const body = await res.json();
-    expect(body?.error).toBe("Unhandled request");
-    expect(body?.details?.url).toBe("http://api.test/not-found-here");
+    expect(original).not.toHaveBeenCalled();
+
+    errSpy.mockRestore();
+    warnSpy.mockRestore();
   });
 
   it("listen() can update onUnhandledRequest on-the-fly", async () => {

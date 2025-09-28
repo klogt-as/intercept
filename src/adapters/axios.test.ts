@@ -162,31 +162,32 @@ describe("axios adapter + intercept", () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
-  it('unhandled "error": throws axios-like error with 501 and details', async () => {
+  it('unhandled "error": rejects with thrown error (no axios-like 501)', async () => {
     const { axios } = createAxiosStub();
-    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     stubOriginalFetchReturning("SHOULD-NOT", { status: 200 });
+
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {}); // just in case
 
     server.listen({ baseUrl: "http://api.test", onUnhandledRequest: "error" });
     server.attachAdapter(createAxiosAdapter(axios));
 
-    await expect(
-      axios.request({ url: "/blocked", method: "post", data: { x: 1 } }),
-    ).rejects.toMatchObject({
-      isAxiosError: true,
-      response: {
-        status: 501,
-        data: expect.objectContaining({
-          error: "Unhandled request",
-          details: expect.objectContaining({
-            method: "POST",
-            url: "http://api.test/blocked",
-          }),
-        }),
-      },
-    });
+    let caught: unknown;
+    try {
+      await axios.request({ url: "/blocked", method: "post", data: { x: 1 } });
+      throw new Error("Expected request to reject");
+    } catch (e) {
+      caught = e;
+    }
 
-    expect(errSpy).toHaveBeenCalledTimes(1);
+    expect(caught).toBeInstanceOf(Error);
+    expect(String((caught as Error).message)).toContain("Unhandled request");
+    expect(String((caught as Error).message)).toContain(
+      "❌ Unhandled request (error mode)",
+    );
+
+    errSpy.mockRestore();
+    warnSpy.mockRestore();
   });
 
   it("JSON serialization when data is not BodyInit + automatic content-type", async () => {
