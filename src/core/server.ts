@@ -105,7 +105,7 @@ export const server = {
    * If called multiple times, options are merged and adapters remain attached.
    * By default, we attach the Fetch adapter if available and not already attached.
    */
-  listen(options: ListenOptions) {
+  listen<BaseUrl extends string>(options: ListenOptions<BaseUrl>) {
     setConfigs({
       baseUrl: validateBaseUrl(options.baseUrl),
       onUnhandledRequest: options.onUnhandledRequest ?? null,

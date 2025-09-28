@@ -109,7 +109,7 @@ const never: Promise<Response> = new Promise(() => {});
  * Exposes: `resolve`, `reject`, `fetching`, and `handle`.
  */
 function addInterceptFor(method: HttpMethod) {
-  return (path: Path) => {
+  return <P extends Path>(path: P) => {
     /**
      * Build a ResponseInit without explicitly setting undefined properties.
      * This avoids exactOptionalPropertyTypes issues (headers?: HeadersInit).

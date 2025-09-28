@@ -6,7 +6,7 @@ export type HttpMethod =
   | "DELETE"
   | "OPTIONS";
 
-export type Path = `/${string}` | "/*";
+export type Path = `/${string}`;
 export type JsonHeaders = Record<string, string>;
 export type JsonBodyType = unknown;
 
@@ -28,17 +28,24 @@ export type OnUnhandledRequestStrategy =
     }) => undefined | "warn" | "error" | "bypass");
 
 /**
+ * String that must NOT end with a trailing slash.
+ */
+type NoTrailingSlash<T extends string> = T extends `${string}/` ? never : T;
+
+/**
  * Options for `server.listen`.
  */
-export type ListenOptions = {
+export type ListenOptions<BaseUrl extends string = string> = {
   /**
    * Base URL that inbound requests are compared against.
    * Example: "http://localhost", "http://localhost:5173/api"
    *
    * All requests must share the same origin as `baseUrl` and have a path
    * that starts with `baseUrl`'s pathname to be eligible for matching.
+   *
+   * Note: `baseUrl` must NOT end with a slash (`/`).
    */
-  baseUrl: string;
+  baseUrl: NoTrailingSlash<BaseUrl>;
   /** What to do when no handler matches the request (default: "warn"). */
   onUnhandledRequest?: OnUnhandledRequestStrategy;
 };
