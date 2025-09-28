@@ -113,6 +113,53 @@ describe("server and intercept integration", () => {
     expect(await res.text()).toBe(""); // 204 must have no body
   });
 
+  it("ignore(): silences provided paths with 204 across all HTTP methods", async () => {
+    const original = stubOriginalFetchReturning("should-not-be-called", {
+      status: 200,
+    });
+    server.listen({ baseUrl: "http://api.test", onUnhandledRequest: "error" });
+
+    // Silence analytics & health-checks in tests
+    intercept.ignore(["/analytics", "/ping"]);
+
+    // GET
+    const resGet = await fetch("http://api.test/analytics");
+    expect(resGet.status).toBe(204);
+    expect(await resGet.text()).toBe("");
+
+    // POST
+    const resPost = await fetch("http://api.test/analytics", {
+      method: "POST",
+    });
+    expect(resPost.status).toBe(204);
+    expect(await resPost.text()).toBe("");
+
+    // OPTIONS
+    const resOptions = await fetch("http://api.test/ping", {
+      method: "OPTIONS",
+    });
+    expect(resOptions.status).toBe(204);
+    expect(await resOptions.text()).toBe("");
+
+    // Ensure passthrough never happened
+    expect(original).not.toHaveBeenCalled();
+  });
+
+  it("ignore(): later, more specific handlers can override an ignored path (last wins)", async () => {
+    stubOriginalFetchReturning("should-not-be-called");
+    server.listen({ baseUrl: "http://api.test", onUnhandledRequest: "error" });
+
+    // First, ignore the path…
+    intercept.ignore(["/thing"]);
+
+    // …then override with a specific handler registered later
+    intercept.get("/thing").resolve({ v: "override" });
+
+    const res = await fetch("http://api.test/thing");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ v: "override" });
+  });
+
   it("Last handler wins: the most recently registered handler has priority", async () => {
     stubOriginalFetchReturning("should-not-be-called");
     server.listen({ baseUrl: "http://api.test", onUnhandledRequest: "error" });

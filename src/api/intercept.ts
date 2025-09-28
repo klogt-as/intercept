@@ -242,4 +242,35 @@ export const intercept = {
   patch: addInterceptFor("PATCH"),
   delete: addInterceptFor("DELETE"),
   options: addInterceptFor("OPTIONS"),
+
+  /**
+   * Ignore (silence) requests to the given paths across **all HTTP methods**.
+   *
+   * This is handy for analytics, health checks, or any traffic you don’t want
+   * your tests to care about. Each ignored path returns **204 No Content**
+   * immediately, so it won’t fail tests that assert “no unhandled requests”.
+   *
+   * Can be called at the top of the test file or inside a `beforeAll`.
+   *
+   * @example
+   * intercept.ignore(['/analytics', '/ping']);
+   *
+   * @param paths List of paths (or route patterns) to ignore.
+   *              The type matches your router’s Path type.
+   */
+  ignore(paths: ReadonlyArray<Path>) {
+    const methods: HttpMethod[] = [
+      "GET",
+      "POST",
+      "PUT",
+      "PATCH",
+      "DELETE",
+      "OPTIONS",
+    ];
+    for (const p of paths) {
+      for (const m of methods) {
+        register(m, p as Path, () => new HttpResponse(null, { status: 204 }));
+      }
+    }
+  },
 };

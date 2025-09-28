@@ -104,7 +104,7 @@ it("renders users from API", async () => {
 
 `@klogt/intercept` plays nicely with data fetching libraries like **TanStack Query**.
 
-Here’s a simple example component:
+Here's a simple example component:
 
 ```tsx
 // Users.tsx
@@ -244,7 +244,30 @@ intercept.post("/login").resolve(async (_json, { request, url, params }) => {
 });
 ```
 
-> If you return a plain object, it’s sent as JSON with defaults. Return a `Response` to take full control.
+> If you return a plain object, it's sent as JSON with defaults. Return a `Response` to take full control.
+
+---
+
+## Ignoring requests
+
+Ignore requests to given paths across **all HTTP methods**. Handy for analytics, health checks, or any traffic you don't want your tests to care about. Returns **204 No Content** immediately to prevent test failures.
+
+```typescript
+intercept.ignore(paths: ReadonlyArray<Path>)
+```
+
+**Example:**
+```typescript
+// Ignore analytics and health check endpoints
+intercept.ignore(['/analytics', '/ping', '/health-check']);
+
+// Can be called in beforeAll
+beforeAll(() => {
+  intercept.ignore(['/metrics', '/analytics/*']);
+});
+```
+
+All HTTP methods (GET, POST, PUT, PATCH, DELETE, OPTIONS) are automatically handled for each ignored path.
 
 ---
 
@@ -273,7 +296,7 @@ const instance = axios.create({ baseURL: "http://localhost" });
 server.attachAdapter(createAxiosAdapter(instance));
 ```
 
-**No runtime axios dependency**: the adapter’s types reference `axios` conditionally so your library/app doesn’t pull axios unless you install it yourself.
+**No runtime axios dependency**: the adapter's types reference `axios` conditionally so your library/app doesn't pull axios unless you install it yourself.
 
 ---
 
@@ -321,6 +344,14 @@ resolve<T>(jsonOrResolver: T | DynamicResolver<T>, init?: {
 
 If `status` is `204`, any body is stripped.
 
+### `intercept.ignore(paths)`
+
+Ignore requests to given paths across all HTTP methods.
+
+```ts
+intercept.ignore(paths: ReadonlyArray<Path>): void;
+```
+
 ---
 
 ## Testing patterns
@@ -328,14 +359,15 @@ If `status` is `204`, any body is stripped.
 - Put `server.listen/resetHandlers/close` in a dedicated **setup file** and reference it from your test runner config.
 - Define **baseline routes** in the setup and **override** within individual tests as needed.
 - Use `onUnhandledRequest: "error"` locally to smoke out missing handlers.
+- Use `intercept.ignore()` to silence analytics, health checks, or other unimportant traffic.
 
 ---
 
 ## Troubleshooting
 
-### “Cannot find module 'axios' or its type declarations”
+### "Cannot find module 'axios' or its type declarations"
 
-You don’t need axios unless you attach the adapter. If your TS setup still tries to resolve axios types, make sure you’re not importing from `@klogt/intercept/axios` unless axios is installed. The adapter itself uses a conditional type import to avoid a hard dependency.
+You don't need axios unless you attach the adapter. If your TS setup still tries to resolve axios types, make sure you're not importing from `@klogt/intercept/axios` unless axios is installed. The adapter itself uses a conditional type import to avoid a hard dependency.
 
 ### ESM/CJS
 
