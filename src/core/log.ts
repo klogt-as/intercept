@@ -5,7 +5,7 @@ export function logUnhandled(kind: "warn" | "error", req: Request, url: URL) {
     kind === "warn"
       ? [
           `${INTERCEPT_LOG_PREFIX} 🚧 Unhandled request`,
-          `   → ${req.method} ${url.pathname}${url.search}`,
+          `   → ${req.method} ${url.toString()}`,
           "",
           "No intercept handler matched this request.",
           "Tip: add one with:",
@@ -13,7 +13,7 @@ export function logUnhandled(kind: "warn" | "error", req: Request, url: URL) {
         ]
       : [
           `${INTERCEPT_LOG_PREFIX} ❌ Unhandled request (error mode)`,
-          `   → ${req.method} ${url.pathname}${url.search}`,
+          `   → ${req.method} ${url.toString()}`,
           "",
           "No intercept handler matched this request.",
           "The request was blocked with a 501 response.",
@@ -26,7 +26,8 @@ export function logUnhandled(kind: "warn" | "error", req: Request, url: URL) {
   if (kind === "warn") {
     console.warn(message);
   } else {
+    // In "error" mode we only log. Adapters decide how to surface the failure
+    // (e.g., return 501 Response in fetch adapter, or throw axios-like error).
     console.error(message);
-    throw new Error(message);
   }
 }

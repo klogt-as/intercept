@@ -21,7 +21,6 @@ type NonNullConfig<T> = {
  */
 const initial: { configs: ToConfig<ListenOptions> } = {
   configs: {
-    baseUrl: null,
     onUnhandledRequest: "warn",
   },
 };
@@ -67,7 +66,6 @@ export function getConfigs(): Readonly<NonNullConfig<ListenOptions>> {
 export function setConfigs(next: Partial<ToConfig<ListenOptions>>) {
   store.configs = {
     ...store.configs,
-    baseUrl: next.baseUrl ?? store.configs.baseUrl ?? null,
     onUnhandledRequest:
       next.onUnhandledRequest ?? store.configs.onUnhandledRequest ?? null,
   };

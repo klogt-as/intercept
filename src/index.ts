@@ -9,8 +9,6 @@ export type {
 
 export { intercept } from "./api/intercept";
 
-export { server } from "./core/server";
-
 export type {
   HttpMethod,
   JsonBodyType,

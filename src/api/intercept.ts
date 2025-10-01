@@ -1,8 +1,10 @@
+import { resetActiveOrigin, setActiveOrigin } from "../core/origin";
 import { server } from "../core/server";
 import type {
   HttpMethod,
   JsonBodyType,
   JsonHeaders,
+  ListenOptions,
   Path,
 } from "../core/types";
 import { HttpResponse } from "../http/response";
@@ -29,8 +31,25 @@ const DEFAULT_STATUS: Record<HttpMethod, number> = {
 };
 
 /**
+ * Guard that ensures .listen() has been called before route registration.
+ * This provides a strong DX message if a user forgets to set up intercept first.
+ */
+function assertListening() {
+  if (!server.isListening()) {
+    throw new Error(
+      `[@klogt/intercept] You must call intercept.listen(...) before registering routes. ` +
+        `Do this in setupTests.ts or in this file's beforeAll. Example:\n` +
+        `  beforeAll(() => {\n` +
+        `    intercept.listen({ onUnhandledRequest: 'error' })\n` +
+        `           .origin('https://api.example.com');\n` +
+        `  });`,
+    );
+  }
+}
+
+/**
  * Internal: register a handler with the underlying server.
- * Kept minimal to ensure compatibility with your `server.use`.
+ * Kept minimal to ensure compatibility with server.use.
  */
 function register(
   method: HttpMethod,
@@ -41,6 +60,7 @@ function register(
     params: Record<string, string>;
   }) => Response | Promise<Response>,
 ) {
+  assertListening();
   server.use(method, path, handler);
 }
 
@@ -127,7 +147,6 @@ function addInterceptFor(method: HttpMethod) {
     ) => {
       const status = init.status ?? DEFAULT_STATUS[method];
 
-      // If status implies no content, force null body.
       if (status === 204) {
         return new HttpResponse(null, makeInit(status, init.headers));
       }
@@ -139,12 +158,12 @@ function addInterceptFor(method: HttpMethod) {
        * Resolve this route with a successful JSON response.
        *
        * @example
-       * intercept.get('/users').resolve([{ id: 1 }])
+       *   // Relative path
+       *   intercept.get('/users').resolve([{ id: 1 }]);
        *
-       * @param json JSON body to return (ignored if status=204).
-       * @param init Optional overrides like `status` or custom `headers`.
-       *             Note: `headers` is omitted from ResponseInit when undefined
-       *             to comply with `exactOptionalPropertyTypes: true`.
+       *   // Absolute URL (highest priority)
+       *   intercept.get('https://payments.example.com/v1/charges')
+       *            .resolve({ ok: true });
        */
       resolve<T extends JsonBodyType>(json: T, init: ResolveInit = {}) {
         register(method, path, () => respondSuccess(json, init));
@@ -155,10 +174,6 @@ function addInterceptFor(method: HttpMethod) {
        *
        * @example
        * intercept.post('/login').reject({ status: 401, body: { code: 'UNAUTHORIZED' } })
-       *
-       * @param opts Error options (status default is 400).
-       *             Note: `headers` is omitted from ResponseInit when undefined
-       *             to comply with `exactOptionalPropertyTypes: true`.
        */
       reject<T extends JsonBodyType | undefined = JsonBodyType>(
         opts: RejectInit<T> = {},
@@ -181,14 +196,6 @@ function addInterceptFor(method: HttpMethod) {
        * - If `delayMs` is omitted, the promise never resolves (request hangs).
        * - If `delayMs` is provided, resolves after that delay with the provided
        *   `status` (default 204) and optional `headers`.
-       *
-       * @example
-       * // never resolves
-       * intercept.get('/slow').fetching();
-       *
-       * @example
-       * // resolves after 800ms with 204
-       * intercept.get('/slow').fetching({ delayMs: 800 });
        */
       fetching(init: FetchingInit = {}) {
         const { delayMs, status = 204, headers } = init;
@@ -206,14 +213,6 @@ function addInterceptFor(method: HttpMethod) {
       /**
        * Full control: supply a custom resolver. You receive parsed JSON body
        * (best-effort) plus the raw `Request`, `URL`, and `params`.
-       *
-       * @example
-       * intercept.post('/users').handle(async ({ body }) => {
-       *   if (!body || typeof body !== 'object') {
-       *     return HttpResponse.json({ error: 'Invalid' }, { status: 400 });
-       *   }
-       *   return HttpResponse.json({ id: 1 }, { status: 201 });
-       * });
        */
       handle<TReq = unknown>(resolver: DynamicResolver<TReq>) {
         register(method, path, async ({ request, url, params }) => {
@@ -226,16 +225,11 @@ function addInterceptFor(method: HttpMethod) {
 }
 
 /**
- * Public fluent API: chain by method and path, then choose a terminal action:
- * `.resolve(...)`, `.reject(...)`, `.fetching(...)`, or `.handle(...)`.
- *
- * @example
- * intercept.get('/todos').resolve([{ id: 1 }]);
- * intercept.post('/todos').reject({ status: 422, body: { message: 'Invalid' } });
- * intercept.get('/slow').fetching({ delayMs: 1000 });
- * intercept.patch('/todos/:id').handle(({ params, body }) => { ... });
+ * Public fluent API
  */
+
 export const intercept = {
+  // Route builders
   get: addInterceptFor("GET"),
   post: addInterceptFor("POST"),
   put: addInterceptFor("PUT"),
@@ -244,23 +238,20 @@ export const intercept = {
   options: addInterceptFor("OPTIONS"),
 
   /**
+   * Start or update intercept. baseUrl is intentionally unsupported everywhere.
+   * Returns `this` to allow chaining `.origin(...)`.
+   */
+  listen(options: ListenOptions) {
+    server.listen({ onUnhandledRequest: options.onUnhandledRequest });
+    return this as typeof intercept;
+  },
+
+  /**
    * Ignore (silence) requests to the given paths across **all HTTP methods**.
-   *
-   * This is handy for analytics, health checks, or any traffic you don’t want
-   * your tests to care about. Each ignored path returns **204 No Content**
-   * immediately, so it won’t fail tests that assert “no unhandled requests”.
-   *
-   * Must be called inside a `beforeEach`.
-   *
-   * @example
-   * beforeEach(() => {
-   *  intercept.ignore(['/metrics', '/analytics/*']);
-   * });
-   *
-   * @param paths List of paths (or route patterns) to ignore.
-   *              The type matches your router’s Path type.
+   * Must be called after listen().
    */
   ignore(paths: ReadonlyArray<Path>) {
+    assertListening();
     const methods: HttpMethod[] = [
       "GET",
       "POST",
@@ -271,8 +262,41 @@ export const intercept = {
     ];
     for (const p of paths) {
       for (const m of methods) {
-        register(m, p as Path, () => new HttpResponse(null, { status: 204 }));
+        server.use(m, p as Path, () => new HttpResponse(null, { status: 204 }));
       }
     }
+  },
+
+  /**
+   * Set the active origin for relative paths in this test file/run and
+   * return the intercept API so you can fluently chain route declarations.
+   *
+   * Can be called in beforeAll (applies to the whole file) or in beforeEach.
+   * Absolute URLs ignore origin.
+   */
+  origin(origin: string) {
+    setActiveOrigin(origin);
+    return this as typeof intercept;
+  },
+
+  /**
+   * Reset all routes.
+   * Use in afterEach.
+   */
+  reset() {
+    server.resetHandlers();
+  },
+
+  /**
+   * Detach adapters, restore globals, and clear all state.
+   * Use in afterAll.
+   */
+  close() {
+    server.close();
+  },
+
+  /** Internal/testing helper: clear per-test origin (called automatically on reset). */
+  _clearOriginForTestOnly() {
+    resetActiveOrigin();
   },
 };

@@ -1,4 +1,5 @@
 /** biome-ignore-all lint/suspicious/noExplicitAny: <allow missing axios types> */
+import { getActiveOrigin } from "../core/origin";
 import type { Adapter, CoreForAdapter } from "../core/types";
 import { headersToObject, resolveStrategy } from "../core/utils";
 import { HttpResponse } from "../http/response";
@@ -10,6 +11,8 @@ import type {
   MinimalAxiosError,
   MinimalAxiosResponse,
 } from "./types";
+
+const REL_BASE = "http://origin.invalid";
 
 // ------------------------------------------------------------
 // Helpers
@@ -173,31 +176,34 @@ export function createAxiosAdapter(instance: AxiosLikeInstance): Adapter {
   /**
    * Build a WHATWG Request from axios config + base URLs.
    *
-   * Respects:
+   * Respects (axios semantics):
    * - config.baseURL (highest precedence)
    * - instance.defaults.baseURL (next)
-   * - serverBaseUrl (fallback from server.listen)
-   *
-   * Axios semantics are preserved: relative URL joined with baseURL,
-   * leading "/" does NOT drop the base path prefix.
+   * If none provided:
+   * - keep `config.url` as-is (relative like "/v1/x" allowed) and let the core
+   *   resolve against intercept.origin(...).
    *
    * Also builds headers robustly from "axios-like" shapes (arrays, numbers, booleans).
    */
-  function axiosConfigToRequest(
-    config: MinimalAxiosConfig,
-    serverBaseUrl: string,
-  ): Request {
+  function axiosConfigToRequest(config: MinimalAxiosConfig): Request {
     const candidateBase =
-      (config.baseURL as string | undefined) ??
-      getInstanceBaseURL() ??
-      serverBaseUrl;
+      (config.baseURL as string | undefined) ?? getInstanceBaseURL();
 
     let fullUrl = (config.url ?? "").toString();
 
     if (isAbsoluteURL(fullUrl)) {
-      // Absolute URLs are used as-is
+      // use as-is
     } else if (candidateBase) {
       fullUrl = combineURLs(candidateBase, fullUrl);
+    } else {
+      // No axios baseURL — try active intercept.origin as the fallback for relative URLs.
+      const active = getActiveOrigin();
+      if (active) {
+        fullUrl = combineURLs(active, fullUrl);
+      } else {
+        // Last resort: mark as "relative" via sentinel origin so core can still reason about it.
+        fullUrl = new URL(fullUrl, REL_BASE).toString();
+      }
     }
 
     const method = String(config.method || "get").toUpperCase();
@@ -230,11 +236,7 @@ export function createAxiosAdapter(instance: AxiosLikeInstance): Adapter {
 
       anyInst.defaults.adapter = async (config: any) => {
         // NB: `config` is `any` here to support both real axios and stub.
-        const req = axiosConfigToRequest(
-          config as MinimalAxiosConfig,
-          core.getOptions().baseUrl,
-        );
-        const url = new URL(req.url, core.getOptions().baseUrl);
+        const req = axiosConfigToRequest(config as MinimalAxiosConfig);
 
         const result = await core.tryHandle(req);
         if (result.matched) {
@@ -242,15 +244,20 @@ export function createAxiosAdapter(instance: AxiosLikeInstance): Adapter {
         }
 
         // Unhandled request
+        // Build a URL object for logging:
+        const urlForLogs = isAbsoluteURL(req.url)
+          ? new URL(req.url)
+          : new URL(req.url, "http://origin.invalid");
+
         const strategy = resolveStrategy(core.getOptions().onUnhandledRequest, {
           request: req,
-          url,
+          url: urlForLogs,
         });
 
         if (strategy === "warn" || strategy === "bypass") {
           // In both "warn" and "bypass" we prefer delegating to the original adapter if present.
           if (strategy === "warn") {
-            core.logUnhandled("warn", req, url);
+            core.logUnhandled("warn", req, urlForLogs);
           }
           if (originalAdapter) {
             return originalAdapter(config);
@@ -272,13 +279,13 @@ export function createAxiosAdapter(instance: AxiosLikeInstance): Adapter {
         }
 
         // strategy === "error" -> reject like axios would on HTTP error
-        core.logUnhandled("error", req, url);
+        core.logUnhandled("error", req, urlForLogs);
         const res = HttpResponse.json(
           {
             error: "Unhandled request",
             details: {
               method: req.method,
-              url: url.toString(),
+              url: urlForLogs.toString(),
               headers: headersToObject(req.headers),
             },
           },

@@ -1,19 +1,16 @@
 import { createFetchAdapter } from "../adapters/fetch";
+import { INTERCEPT_LOG_PREFIX } from "./constants";
 import { logUnhandled } from "./log";
+import { getActiveOrigin, resetActiveOrigin } from "./origin";
 import { getConfigs, resetConfigs, setConfigs } from "./store";
 import type {
   Adapter,
   HttpMethod,
-  ListenOptions,
+  ListenOptions, // NOTE: this must now only include { onUnhandledRequest?: ... }
   Path,
   TryHandleResult,
 } from "./types";
-import {
-  compilePattern,
-  matchPattern,
-  tryJson,
-  validateBaseUrl,
-} from "./utils";
+import { compilePattern, matchPattern, tryJson } from "./utils";
 
 // Minimal MSW-like test server (no MSW). Node 20+ (native fetch).
 // Features: listen/resetHandlers/close/use, URL param matching, unhandled logging,
@@ -41,30 +38,78 @@ let _fetchAdapterAttached = false;
 
 const _adapters: Adapter[] = [];
 
+// Tracks whether .listen() has been called at least once in this process.
+let _listening = false;
+
+// -------------------------
+// Helpers (absolute URL support)
+// -------------------------
+
+/** Very lightweight absolute URL check for http/https. */
+function isAbsoluteUrl(input: string): boolean {
+  return /^https?:\/\//i.test(input.trim());
+}
+
+/**
+ * Normalize a URL string to a stable key for matching.
+ * - Lowercases protocol and host (RFC: case-insensitive)
+ * - Preserves pathname, search, and hash as serialized by URL
+ */
+function normalizeAbsoluteUrl(input: string): string {
+  const u = new URL(input);
+  const protocol = u.protocol.toLowerCase();
+  const host = u.host.toLowerCase();
+  return `${protocol}//${host}${u.pathname}${u.search}${u.hash}`;
+}
+
 // -------------------------
 // Core matching & dispatch
 // -------------------------
 
 /**
  * Find the last-registered handler that matches method + URL.
+ *
+ * Priority:
+ *  1) Absolute URL handlers (exact match on normalized full URL)
+ *  2) Relative handlers resolved against current origin (via intercept.origin)
  */
 function findHandler(
   method: HttpMethod,
   url: URL,
 ): { handler: InternalHandler; params: Record<string, string> } | null {
-  const configs = getConfigs();
-  const base = new URL(configs.baseUrl);
+  // 1) Absolute URL pass
+  for (let i = _handlers.length - 1; i >= 0; i--) {
+    const h = _handlers[i];
+    if (!h) continue;
+    if (h.method !== method) continue;
 
-  if (url.origin !== base.origin) return null;
-  if (!url.pathname.startsWith(base.pathname)) return null;
+    const pattern = String(h.pathPattern);
+    if (!isAbsoluteUrl(pattern)) continue;
 
-  const raw = url.pathname.slice(base.pathname.length) || "/";
-  const remainder = raw.startsWith("/") ? raw : `/${raw}`;
+    if (
+      normalizeAbsoluteUrl(pattern) === normalizeAbsoluteUrl(url.toString())
+    ) {
+      return { handler: h, params: {} };
+    }
+  }
+
+  // 2) Relative pass, scoped by active origin
+  const activeOrigin = getActiveOrigin();
+  if (!activeOrigin) return null;
+
+  const originUrl = new URL(activeOrigin);
+  if (url.origin !== originUrl.origin) return null;
+
+  const remainder = url.pathname || "/";
 
   for (let i = _handlers.length - 1; i >= 0; i--) {
     const h = _handlers[i];
     if (!h) continue;
     if (h.method !== method) continue;
+
+    const pattern = String(h.pathPattern);
+    // skip absolute handlers here; they were handled already
+    if (/^https?:\/\//i.test(pattern)) continue;
 
     const m = matchPattern(h.compiled, remainder);
     if (!m && h.pathPattern !== "/*") continue;
@@ -75,12 +120,35 @@ function findHandler(
 }
 
 /**
+ * Build a URL for an incoming request:
+ * - Use the request URL as-is if it's absolute
+ * - Otherwise resolve it against the current origin (set via intercept.origin)
+ * - If neither applies, throw with clear DX to enforce intercept.listen + origin usage
+ */
+function toRequestUrl(reqUrl: string): URL {
+  if (/^https?:\/\//i.test(reqUrl)) return new URL(reqUrl);
+
+  const o = getActiveOrigin();
+  if (o) return new URL(reqUrl, o);
+
+  throw new Error(
+    `${INTERCEPT_LOG_PREFIX} Received a relative request URL "${reqUrl}" but no intercept.origin(...) is set for this test. ` +
+      `Call intercept.origin("https://api.example.com") in beforeAll/beforeEach or use an absolute URL.`,
+  );
+}
+
+/**
  * Attempt to handle a Request. If a handler matches, returns `{ matched: true, res }`.
  * If none matches, returns `{ matched: false }` and lets the adapter decide what to do.
  */
 async function tryHandle(req: Request): Promise<TryHandleResult> {
-  const configs = getConfigs();
-  const url = new URL(req.url, configs.baseUrl);
+  let url: URL;
+  try {
+    url = toRequestUrl(req.url);
+  } catch {
+    return { matched: false };
+  }
+
   const match = findHandler(req.method as HttpMethod, url);
   if (!match) return { matched: false };
 
@@ -100,52 +168,76 @@ async function tryHandle(req: Request): Promise<TryHandleResult> {
 
 export const server = {
   /**
+   * Has listen() been called in this process?
+   */
+  isListening(): boolean {
+    return _listening;
+  },
+
+  /**
    * Start (or update) the server configuration and attach default adapters.
    *
+   * Only supports { onUnhandledRequest }.
    * If called multiple times, options are merged and adapters remain attached.
-   * By default, we attach the Fetch adapter if available and not already attached.
    */
-  listen<BaseUrl extends string>(options: ListenOptions<BaseUrl>) {
+  listen(options: ListenOptions) {
     setConfigs({
-      baseUrl: validateBaseUrl(options.baseUrl),
       onUnhandledRequest: options.onUnhandledRequest ?? null,
     });
 
-    if (
-      !_originalFetch &&
-      !_fetchAdapterAttached &&
-      typeof globalThis.fetch === "function"
-    ) {
+    const preAttachFetch =
+      typeof globalThis.fetch === "function" ? globalThis.fetch : null;
+
+    if (!_fetchAdapterAttached && typeof globalThis.fetch === "function") {
       const fetchAdapter = createFetchAdapter();
       fetchAdapter.attach({
         tryHandle,
         getOptions: () => {
           const configs = getConfigs();
           return {
-            baseUrl: configs.baseUrl,
-            onUnhandledRequest: configs.onUnhandledRequest,
+            onUnhandledRequest: configs.onUnhandledRequest ?? null,
           } as const;
         },
         logUnhandled,
       });
       _adapters.push(fetchAdapter);
-      _originalFetch = globalThis.fetch; // Remember we patched fetch via adapter
       _fetchAdapterAttached = true;
     }
+
+    if (!_originalFetch) {
+      _originalFetch = preAttachFetch;
+    }
+
+    _listening = true;
   },
 
   /**
    * Register a route handler. Last registered wins (stack behavior).
    *
+   * Throws a DX-friendly error if called before .listen().
+   *
    * @param method HTTP method to match
-   * @param path Path pattern. Supports `/users/:id` and `/*`
+   * @param path Path pattern. Supports `/users/:id`, `/*`, and absolute URLs `https://host/path`
    * @param fn Handler invoked when the request matches
    */
   use(method: HttpMethod, path: Path, fn: InternalHandler["fn"]) {
+    if (!_listening) {
+      throw new Error(
+        `${INTERCEPT_LOG_PREFIX} You tried to register a route before intercept.listen(). ` +
+          `Call intercept.listen({ onUnhandledRequest: 'error' | 'warn' | 'bypass' }) first ` +
+          `— typically in setupTests.ts or in this file's beforeAll.`,
+      );
+    }
+
+    const patternStr = String(path);
+    const compiled = /^https?:\/\//i.test(patternStr)
+      ? compilePattern("/*") // absolute URL matching is handled in findHandler, not via pattern
+      : compilePattern(patternStr);
+
     _handlers.push({
       method,
       pathPattern: path,
-      compiled: compilePattern(path),
+      compiled,
       fn,
     });
   },
@@ -181,7 +273,9 @@ export const server = {
     }
 
     _handlers.length = 0;
+    resetActiveOrigin();
     resetConfigs();
+    _listening = false;
   },
 
   /**
@@ -213,14 +307,6 @@ export const server = {
         _adapters.splice(i, 1);
       }
     }
-  },
-
-  /**
-   * Read-only snapshot of the current baseUrl (useful for adapters).
-   */
-  getBaseUrl(): string {
-    const configs = getConfigs();
-    return configs.baseUrl;
   },
 
   /**
