@@ -103,3 +103,28 @@ export function resolveStrategy(
   }
   return opt ?? "warn";
 }
+
+/**
+ * Validates and normalizes an origin URL.
+ * - Requires protocol + host, no path/query/hash
+ * - Returns normalized origin in lowercase (e.g., "https://api.example.com")
+ * - Throws if the input is invalid
+ */
+export function validateOrigin(input: string): string {
+  const url = new URL(input);
+
+  if (url.pathname !== "/" || url.search || url.hash) {
+    throw new Error(
+      `${INTERCEPT_LOG_PREFIX} Expected an origin without path/query/hash, e.g. "https://api.example.com". Got: "${input}"`,
+    );
+  }
+
+  const normalized = `${url.protocol.toLowerCase()}//${url.host.toLowerCase()}`;
+
+  // Disallow malformed origins
+  if (normalized.endsWith("//")) {
+    throw new Error(`${INTERCEPT_LOG_PREFIX} Invalid origin: "${input}"`);
+  }
+
+  return normalized;
+}

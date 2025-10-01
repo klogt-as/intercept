@@ -1,5 +1,4 @@
-/** biome-ignore-all lint/suspicious/noExplicitAny: <allow missing axios types> */
-import { getActiveOrigin } from "../core/origin";
+import { getOrigin } from "../core/store";
 import type { Adapter, CoreForAdapter } from "../core/types";
 import { headersToObject, resolveStrategy } from "../core/utils";
 import { HttpResponse } from "../http/response";
@@ -197,7 +196,7 @@ export function createAxiosAdapter(instance: AxiosLikeInstance): Adapter {
       fullUrl = combineURLs(candidateBase, fullUrl);
     } else {
       // No axios baseURL — try active intercept.origin as the fallback for relative URLs.
-      const active = getActiveOrigin();
+      const active = getOrigin();
       if (active) {
         fullUrl = combineURLs(active, fullUrl);
       } else {

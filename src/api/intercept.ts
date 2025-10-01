@@ -1,5 +1,5 @@
-import { resetActiveOrigin, setActiveOrigin } from "../core/origin";
 import { server } from "../core/server";
+import { resetOrigin, setOrigin } from "../core/store";
 import type {
   HttpMethod,
   JsonBodyType,
@@ -275,7 +275,7 @@ export const intercept = {
    * Absolute URLs ignore origin.
    */
   origin(origin: string) {
-    setActiveOrigin(origin);
+    setOrigin(origin);
     return this as typeof intercept;
   },
 
@@ -297,6 +297,6 @@ export const intercept = {
 
   /** Internal/testing helper: clear per-test origin (called automatically on reset). */
   _clearOriginForTestOnly() {
-    resetActiveOrigin();
+    resetOrigin();
   },
 };

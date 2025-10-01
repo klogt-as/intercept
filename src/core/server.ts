@@ -1,13 +1,14 @@
 import { createFetchAdapter } from "../adapters/fetch";
 import { INTERCEPT_LOG_PREFIX } from "./constants";
 import { logUnhandled } from "./log";
-import { getActiveOrigin, resetActiveOrigin } from "./origin";
 import {
-  getConfigs,
+  getConfig,
+  getOrigin,
   getOriginalFetch,
   isFetchAdapterAttached,
-  resetConfigs,
-  setConfigs,
+  resetConfig,
+  resetOrigin,
+  setConfig,
   setFetchAdapterAttached,
   setOriginalFetch,
   isListening as storeIsListening,
@@ -98,7 +99,7 @@ function findHandler(
   }
 
   // 2) Relative pass, scoped by active origin
-  const activeOrigin = getActiveOrigin();
+  const activeOrigin = getOrigin();
   if (!activeOrigin) return null;
 
   const originUrl = new URL(activeOrigin);
@@ -132,7 +133,7 @@ function findHandler(
 function toRequestUrl(reqUrl: string): URL {
   if (/^https?:\/\//i.test(reqUrl)) return new URL(reqUrl);
 
-  const o = getActiveOrigin();
+  const o = getOrigin();
   if (o) return new URL(reqUrl, o);
 
   throw new Error(
@@ -186,7 +187,7 @@ export const server = {
    * If called multiple times, options are merged and adapters remain attached.
    */
   listen(options: ListenOptions) {
-    setConfigs({
+    setConfig({
       onUnhandledRequest: options.onUnhandledRequest ?? null,
     });
 
@@ -199,9 +200,9 @@ export const server = {
       fetchAdapter.attach({
         tryHandle,
         getOptions: () => {
-          const configs = getConfigs();
+          const config = getConfig();
           return {
-            onUnhandledRequest: configs.onUnhandledRequest ?? null,
+            onUnhandledRequest: config.onUnhandledRequest ?? null,
           } as const;
         },
         logUnhandled,
@@ -279,8 +280,8 @@ export const server = {
     }
 
     _handlers.length = 0;
-    resetActiveOrigin();
-    resetConfigs();
+    resetOrigin();
+    resetConfig();
     storeSetListening(false);
   },
 
@@ -292,10 +293,10 @@ export const server = {
    *   server.attachAdapter(createAxiosAdapter(instance));
    */
   attachAdapter(adapter: Adapter) {
-    const configs = getConfigs();
+    const config = getConfig();
     adapter.attach({
       tryHandle,
-      getOptions: () => configs,
+      getOptions: () => config,
       logUnhandled,
     });
     _adapters.push(adapter);
@@ -319,7 +320,7 @@ export const server = {
    * Read-only snapshot of the current options.
    */
   getOptions(): Readonly<ListenOptions> {
-    const configs = getConfigs();
-    return configs;
+    const config = getConfig();
+    return config;
   },
 };
