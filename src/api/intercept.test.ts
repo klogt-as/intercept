@@ -26,19 +26,19 @@ async function expectJSON(res: Response, status: number, json: unknown) {
   expect(await res.json()).toEqual(json);
 }
 
-beforeEach(() => {
-  // Use Vitest fake timers for deterministic delay tests.
-  vi.useFakeTimers();
-});
-
-afterEach(() => {
-  // Full cleanup after each test to keep them independent
-  intercept.close();
-  vi.restoreAllMocks();
-  vi.useRealTimers();
-});
-
 describe("intercept integration (origin + absolute URLs)", () => {
+  beforeEach(() => {
+    // Use Vitest fake timers for deterministic delay tests.
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    // Full cleanup after each test to keep them independent
+    intercept.close();
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
   it("requires listen() before route registration (DX guard)", () => {
     // Do not call listen() here on purpose
     expect(() => {
