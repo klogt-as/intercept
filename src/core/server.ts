@@ -46,6 +46,19 @@ type InternalHandler = {
 const _handlers: InternalHandler[] = []; // route stack (last wins)
 const _adapters: Adapter[] = [];
 
+/**
+ * Get a list of all registered handlers for error messages.
+ */
+function getRegisteredHandlersInfo(): Array<{
+  method: HttpMethod;
+  path: Path;
+}> {
+  return _handlers.map((h) => ({
+    method: h.method,
+    path: h.pathPattern,
+  }));
+}
+
 // -------------------------
 // Helpers (absolute URL support)
 // -------------------------
@@ -187,9 +200,11 @@ export const server = {
    * If called multiple times, options are merged and adapters remain attached.
    */
   listen(options: ListenOptions) {
-    setConfig({
-      onUnhandledRequest: options.onUnhandledRequest ?? null,
-    });
+    if (options.onUnhandledRequest) {
+      setConfig({
+        onUnhandledRequest: options.onUnhandledRequest,
+      });
+    }
 
     // Snapshot the *real* original fetch BEFORE patching (if any)
     const preAttachFetch =
@@ -202,9 +217,10 @@ export const server = {
         getOptions: () => {
           const config = getConfig();
           return {
-            onUnhandledRequest: config.onUnhandledRequest ?? null,
-          } as const;
+            onUnhandledRequest: config.onUnhandledRequest ?? undefined,
+          };
         },
+        getRegisteredHandlers: getRegisteredHandlersInfo,
         logUnhandled,
       });
       _adapters.push(fetchAdapter);
@@ -293,10 +309,15 @@ export const server = {
    *   server.attachAdapter(createAxiosAdapter(instance));
    */
   attachAdapter(adapter: Adapter) {
-    const config = getConfig();
     adapter.attach({
       tryHandle,
-      getOptions: () => config,
+      getOptions: () => {
+        const config = getConfig();
+        return {
+          onUnhandledRequest: config.onUnhandledRequest ?? undefined,
+        };
+      },
+      getRegisteredHandlers: getRegisteredHandlersInfo,
       logUnhandled,
     });
     _adapters.push(adapter);
@@ -321,6 +342,10 @@ export const server = {
    */
   getOptions(): Readonly<ListenOptions> {
     const config = getConfig();
-    return config;
+    const result: ListenOptions = {};
+    if (config.onUnhandledRequest !== null) {
+      result.onUnhandledRequest = config.onUnhandledRequest;
+    }
+    return result;
   },
 };

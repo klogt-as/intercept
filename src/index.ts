@@ -7,9 +7,10 @@ export type {
   MinimalAxiosResponse,
 } from "./adapters/types";
 
-export { intercept } from "./api/intercept";
+export { createSetup, intercept } from "./api/intercept";
 
 export type {
+  ExtractPathParams,
   HttpMethod,
   JsonBodyType,
   JsonHeaders,

@@ -391,3 +391,247 @@ describe("origin lifecycle via beforeAll (persists and can be overridden)", () =
     await expect(res.json()).resolves.toEqual({ site: "override" });
   });
 });
+
+describe("Features", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    stubOriginalFetchReturning("should-not-be-called");
+  });
+
+  afterEach(() => {
+    intercept.close();
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  describe("origin parameter in listen()", () => {
+    it("sets origin when provided in listen() options", async () => {
+      intercept.listen({
+        origin: "https://api.test",
+        onUnhandledRequest: "error",
+      });
+
+      intercept.get("/users").resolve([{ id: 1 }]);
+
+      const res = await fetch("https://api.test/users");
+      await expectJSON(res, 200, [{ id: 1 }]);
+    });
+
+    it("can be overridden after listen() with .origin()", async () => {
+      intercept.listen({
+        origin: "https://api1.test",
+        onUnhandledRequest: "error",
+      });
+
+      intercept.origin("https://api2.test");
+      intercept.get("/data").resolve({ source: "api2" });
+
+      const res = await fetch("https://api2.test/data");
+      await expectJSON(res, 200, { source: "api2" });
+    });
+
+    it("works without origin parameter (manual setup still works)", async () => {
+      intercept.listen({ onUnhandledRequest: "error" });
+      intercept.origin("https://api.test");
+
+      intercept.get("/test").resolve({ ok: true });
+
+      const res = await fetch("https://api.test/test");
+      await expectJSON(res, 200, { ok: true });
+    });
+  });
+
+  describe(".delay() method", () => {
+    it("delays .resolve() by specified milliseconds", async () => {
+      intercept.listen({ onUnhandledRequest: "error" });
+      intercept.origin("https://api.test");
+
+      intercept
+        .get("/users")
+        .delay(500)
+        .resolve([{ id: 1, name: "Ada" }]);
+
+      const promise = fetch("https://api.test/users");
+
+      // Not resolved yet
+      let settled = false;
+      promise.then(() => {
+        settled = true;
+      });
+
+      await vi.advanceTimersByTimeAsync(499);
+      expect(settled).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(1);
+      const res = await promise;
+      await expectJSON(res, 200, [{ id: 1, name: "Ada" }]);
+    });
+
+    it("delays .reject() by specified milliseconds", async () => {
+      intercept.listen({ onUnhandledRequest: "error" });
+      intercept.origin("https://api.test");
+
+      intercept
+        .post("/login")
+        .delay(1000)
+        .reject({
+          status: 401,
+          body: { error: "Timeout" },
+        });
+
+      const promise = fetch("https://api.test/login", { method: "POST" });
+
+      let settled = false;
+      promise.then(() => {
+        settled = true;
+      });
+
+      await vi.advanceTimersByTimeAsync(999);
+      expect(settled).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(1);
+      const res = await promise;
+      await expectJSON(res, 401, { error: "Timeout" });
+    });
+
+    it("delays .handle() by specified milliseconds", async () => {
+      intercept.listen({ onUnhandledRequest: "error" });
+      intercept.origin("https://api.test");
+
+      intercept
+        .get("/data")
+        .delay(300)
+        .handle(({ params }) => {
+          return Response.json({ data: "delayed", params });
+        });
+
+      const promise = fetch("https://api.test/data");
+
+      let settled = false;
+      promise.then(() => {
+        settled = true;
+      });
+
+      await vi.advanceTimersByTimeAsync(299);
+      expect(settled).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(1);
+      const res = await promise;
+      await expectJSON(res, 200, { data: "delayed", params: {} });
+    });
+  });
+
+  describe("createSetup() helper", () => {
+    it("creates setup object with start/reset/close methods", async () => {
+      const { createSetup } = await import("./intercept");
+      const setup = createSetup({
+        origin: "https://api.test",
+        onUnhandledRequest: "error",
+      });
+
+      expect(setup).toHaveProperty("start");
+      expect(setup).toHaveProperty("reset");
+      expect(setup).toHaveProperty("close");
+      expect(typeof setup.start).toBe("function");
+      expect(typeof setup.reset).toBe("function");
+      expect(typeof setup.close).toBe("function");
+    });
+
+    it("start() initializes intercept with provided options", async () => {
+      const { createSetup } = await import("./intercept");
+      const setup = createSetup({
+        origin: "https://api.test",
+        onUnhandledRequest: "error",
+      });
+
+      setup.start();
+
+      intercept.get("/users").resolve([{ id: 1 }]);
+      const res = await fetch("https://api.test/users");
+      await expectJSON(res, 200, [{ id: 1 }]);
+
+      setup.close();
+    });
+
+    it("reset() clears handlers", async () => {
+      const { createSetup } = await import("./intercept");
+      const setup = createSetup({
+        origin: "https://api.test",
+        onUnhandledRequest: "bypass",
+      });
+
+      const original = stubOriginalFetchReturning("bypassed", { status: 200 });
+
+      setup.start();
+
+      intercept.get("/test").resolve({ v: 1 });
+      setup.reset();
+
+      // After reset, handler is gone, should bypass
+      const res = await fetch("https://api.test/test");
+      expect(original).toHaveBeenCalled();
+
+      setup.close();
+    });
+
+    it("close() stops intercept", async () => {
+      const { createSetup } = await import("./intercept");
+      const setup = createSetup({ onUnhandledRequest: "error" });
+
+      setup.start();
+      expect(() => intercept.get("/test").resolve({})).not.toThrow();
+
+      setup.close();
+      // After close, listen() hasn't been called so registering routes should throw
+      expect(() => intercept.get("/test").resolve({})).toThrow(
+        /must call intercept\.listen/i,
+      );
+    });
+  });
+
+  describe("environment-based onUnhandledRequest defaults", () => {
+    it("defaults to 'error' in test environment (VITEST)", async () => {
+      const originalEnv = process.env.VITEST;
+      process.env.VITEST = "true";
+
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const original = stubOriginalFetchReturning("should-not-be-called");
+
+      // Call listen() without onUnhandledRequest
+      intercept.listen({});
+      intercept.origin("https://api.test");
+
+      const res = await fetch("https://api.test/not-found");
+
+      // Should be error mode (501 response, no passthrough)
+      expect(res.status).toBe(501);
+      expect(original).not.toHaveBeenCalled();
+      expect(errSpy).toHaveBeenCalled();
+
+      errSpy.mockRestore();
+      process.env.VITEST = originalEnv;
+    });
+
+    it("explicit onUnhandledRequest overrides environment default", async () => {
+      const originalEnv = process.env.VITEST;
+      process.env.VITEST = "true";
+
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const original = stubOriginalFetchReturning("bypassed", { status: 200 });
+
+      // Explicitly set to 'warn' even though we're in test env
+      intercept.listen({ onUnhandledRequest: "warn" });
+      intercept.origin("https://api.test");
+
+      const res = await fetch("https://api.test/not-found");
+
+      // Should be warn mode (passthrough)
+      expect(res.status).toBe(200);
+      expect(original).toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalled();
+
+      warnSpy.mockRestore();
+      process.env.VITEST = originalEnv;
+    });
+  });
+});

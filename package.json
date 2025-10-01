@@ -1,6 +1,6 @@
 {
   "name": "@klogt/intercept",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Small but powerful HTTP interception for frontend tests — MSW-flavored, built for Node 20+ with native fetch. Declare routes inline, return typed JSON, and intercept both fetch and Axios for fast, mock-free testing.",
   "type": "module",
   "license": "MIT",

@@ -122,25 +122,20 @@ No need to install `axios` unless you plan to attach the Axios adapter.
 ### Required setup
 
 `intercept` will **not work** until you start the server in your test environment.  
-The recommended way is to create a shared setup file (e.g. `setupTests.ts`) and call `intercept.listen()` there:
+The recommended way is to create a shared setup file (e.g. `setupTests.ts`) using the `createSetup()` helper:
 
 ```ts
 // setupTests.ts
-import { intercept } from "@klogt/intercept";
+import { createSetup } from "@klogt/intercept";
 
-beforeAll(() => {
-  intercept
-    .listen({ onUnhandledRequest: 'error' })
-    .origin('https://api.example.com');
+const setup = createSetup({
+  origin: 'https://api.example.com',
+  onUnhandledRequest: 'error'
 });
 
-afterEach(() => {
-  intercept.reset();
-});
-
-afterAll(() => {
-  intercept.close();
-});
+beforeAll(setup.start);
+afterEach(setup.reset);
+afterAll(setup.close);
 ```
 
 **Important**: Configure this file in your `vitest.config.ts`:
@@ -155,6 +150,8 @@ export default defineConfig({
   },
 });
 ```
+
+**Note**: `onUnhandledRequest` defaults to `'error'` in test environments (Vitest/Jest) and `'warn'` otherwise, so you can omit it if the default works for you.
 
 ### Your first test
 
@@ -185,17 +182,30 @@ it("fetches users from API", async () => {
 
 ### Relative paths require an origin
 
-When you use **relative paths** like `/users`, intercept needs to know the base URL. That's what `.origin()` is for:
+When you use **relative paths** like `/users`, intercept needs to know the base URL. You can set this in two ways:
 
+**Option 1: In `listen()` (recommended)**
+```ts
+intercept.listen({ 
+  origin: 'https://api.example.com',
+  onUnhandledRequest: 'error'
+});
+
+intercept.get("/users").resolve([{ id: 1 }]);
+// Matches: https://api.example.com/users
+```
+
+**Option 2: With `.origin()` method**
 ```ts
 intercept
   .listen({ onUnhandledRequest: 'error' })
   .origin('https://api.example.com');
 
-// Now this works:
 intercept.get("/users").resolve([{ id: 1 }]);
 // Matches: https://api.example.com/users
 ```
+
+Both approaches work, but setting it in `listen()` is cleaner for test setup files.
 
 ### Absolute URLs ignore origin
 
@@ -419,19 +429,60 @@ intercept.get("/orgs/:orgId/repos/:repoId").handle(({ params }) => {
 intercept.get("/*").resolve({ message: "Catch all requests" });
 ```
 
-### Simulate fetching / pending state
+### Adding delays with `.delay()`
 
-Sometimes you want to test a **loading state** by simulating a request that never resolves, or resolves after a delay.  
-Use `.fetching()`:
+Need to simulate network latency? Use `.delay(ms)` for a cleaner syntax:
 
 ```ts
-// Request hangs forever (never resolves)
+// Resolve after 500ms
+intercept.get("/users").delay(500).resolve([{ id: 1, name: "Ada" }]);
+
+// Reject after 1 second
+intercept.post("/login").delay(1000).reject({
+  status: 401,
+  body: { error: "Timeout" }
+});
+
+// Works with .handle() too
+intercept.get("/data").delay(200).handle(({ params }) => {
+  return Response.json({ data: "delayed" });
+});
+```
+
+**Example: Testing loading states**
+
+```tsx
+it("shows spinner while fetching", async () => {
+  vi.useFakeTimers();
+  
+  // Add 500ms delay
+  intercept.get("/users").delay(500).resolve([{ id: 1, name: "Ada" }]);
+
+  renderWithQuery(<Users />);
+
+  // Initially shows loading
+  expect(screen.getByText("Loading...")).toBeInTheDocument();
+
+  // Advance time by 500ms
+  await vi.advanceTimersByTimeAsync(500);
+
+  // Loading disappears, data shows
+  expect(screen.queryByText("Loading...")).not.toBeInTheDocument();
+  expect(await screen.findByText("Ada")).toBeInTheDocument();
+
+  vi.useRealTimers();
+});
+```
+
+### Simulate fetching / pending state
+
+For testing **indefinite loading** or custom response details, use `.fetching()`:
+
+```ts
+// Request hangs forever (never resolves) - useful for timeout tests
 intercept.get("/slow").fetching();
 
-// Resolves after 800ms with status 204 (no content)
-intercept.get("/slow").fetching({ delayMs: 800 });
-
-// Resolve after 500ms with a 200 + custom headers
+// Resolve after delay with custom status and headers
 intercept.get("/slow").fetching({ 
   delayMs: 500, 
   status: 200, 
@@ -439,29 +490,9 @@ intercept.get("/slow").fetching({
 });
 ```
 
-Example with React:
-
-```tsx
-it("shows loading state while fetching", async () => {
-  // Delay the response by 500ms
-  intercept.get("/users").fetching({ delayMs: 500 });
-
-  const queryClient = new QueryClient();
-  render(
-    <QueryClientProvider client={queryClient}>
-      <Users />
-    </QueryClientProvider>
-  );
-
-  // Initially shows loading
-  expect(screen.getByText("Loading...")).toBeInTheDocument();
-
-  // After ~500ms, loading disappears
-  await waitFor(() => {
-    expect(screen.queryByText("Loading...")).not.toBeInTheDocument();
-  });
-});
-```
+**When to use `.delay()` vs `.fetching()`:**
+- Use `.delay()` when you want to add a delay before returning normal responses
+- Use `.fetching()` when you need to test indefinite hanging or need fine-grained control over the delayed response
 
 ### Dynamic resolvers with `.handle()`
 
@@ -764,6 +795,24 @@ intercept.options(path: Path)
 
 Each returns an object with:
 
+#### `.delay(ms)`
+
+Add a delay before responding. Returns a chainable object with resolve/reject/handle methods:
+
+```ts
+delay(ms: number): {
+  resolve<T>(data: T, init?: ResolveInit): void;
+  reject<T>(opts?: RejectInit<T>): void;
+  handle<TRequest>(resolver: DynamicResolver<TRequest>): void;
+}
+```
+
+**Example:**
+```ts
+intercept.get("/users").delay(500).resolve([{ id: 1 }]);
+intercept.post("/login").delay(1000).reject({ status: 401 });
+```
+
 #### `.resolve(data, init?)`
 
 Return successful JSON response:
@@ -846,13 +895,58 @@ afterAll(() => {
 });
 ```
 
+### `createSetup(options)`
+
+Create a test setup helper that reduces boilerplate. Returns an object with lifecycle methods:
+
+```ts
+createSetup(options: ListenOptions): {
+  start: () => void;
+  reset: () => void;
+  close: () => void;
+}
+```
+
+**Parameters:**
+- `options`: Same as `intercept.listen()` - can include `origin` and `onUnhandledRequest`
+
+**Example:**
+```ts
+// setupTests.ts
+import { createSetup } from "@klogt/intercept";
+
+const setup = createSetup({
+  origin: 'https://api.example.com',
+  onUnhandledRequest: 'error'
+});
+
+beforeAll(setup.start);
+afterEach(setup.reset);
+afterAll(setup.close);
+```
+
 ---
 
 ## Troubleshooting
 
 ### "No intercept handler matched this request"
 
-This error means you tried to make a request that doesn't have a matching route.
+This error means you tried to make a request that doesn't have a matching route. The error message now includes helpful context:
+
+```
+[@klogt/intercept] ❌ Unhandled request (error mode)
+   → GET https://api.example.com/user
+
+No intercept handler matched this request.
+The request was blocked with a 501 response.
+
+Registered handlers:
+  GET /users
+  POST /users
+  GET /profile
+
+Did you mean: GET /users?
+```
 
 **Common causes:**
 
@@ -871,7 +965,7 @@ This error means you tried to make a request that doesn't have a matching route.
 2. **Path mismatch** (typo or wrong params):
    ```ts
    intercept.get("/users").resolve([...]);
-   await fetch('/user');  // ❌ Typo - should be /users
+   await fetch('/user');  // ❌ Typo - check "Did you mean?" suggestion
    ```
 
 3. **Method mismatch**:
@@ -879,6 +973,8 @@ This error means you tried to make a request that doesn't have a matching route.
    intercept.get("/users").resolve([...]);
    await fetch('/users', { method: 'POST' });  // ❌ Handler is for GET
    ```
+
+**Tip**: The error message now shows all registered handlers and may suggest the closest match to help you spot typos quickly!
 
 ### "Cannot find module 'axios' or its type declarations"
 

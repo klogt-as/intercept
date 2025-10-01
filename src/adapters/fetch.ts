@@ -62,7 +62,7 @@ export function createFetchAdapter(): Adapter {
         );
 
         if (strategy === "warn") {
-          core.logUnhandled("warn", req, url);
+          core.logUnhandled("warn", req, url, core.getRegisteredHandlers());
           return passthrough(input, init);
         }
 
@@ -71,7 +71,7 @@ export function createFetchAdapter(): Adapter {
         }
 
         // "error" -> block with 501 JSON
-        core.logUnhandled("error", req, url);
+        core.logUnhandled("error", req, url, core.getRegisteredHandlers());
         const details = {
           method: req.method,
           url: url.toString(),

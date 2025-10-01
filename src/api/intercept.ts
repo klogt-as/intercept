@@ -155,6 +155,82 @@ function addInterceptFor(method: HttpMethod) {
 
     return {
       /**
+       * Add a delay before responding. Returns a chainable API with resolve/reject/handle methods.
+       *
+       * @example
+       *   intercept.get('/users').delay(500).resolve([{ id: 1 }]);
+       *   intercept.post('/login').delay(1000).reject({ status: 401 });
+       */
+      delay(ms: number) {
+        return {
+          /**
+           * Resolve after the specified delay.
+           */
+          resolve<T extends JsonBodyType>(json: T, init: ResolveInit = {}) {
+            register(method, path, () => {
+              return new Promise<Response>((resolve) => {
+                setTimeout(
+                  () => resolve(respondSuccess(json, init)),
+                  Math.max(0, ms),
+                );
+              });
+            });
+          },
+
+          /**
+           * Reject after the specified delay.
+           */
+          reject<T extends JsonBodyType | undefined = JsonBodyType>(
+            opts: RejectInit<T> = {},
+          ) {
+            const status = opts.status ?? 400;
+            register(method, path, () => {
+              return new Promise<Response>((resolve) => {
+                setTimeout(
+                  () => {
+                    if (opts.body === undefined) {
+                      resolve(
+                        new HttpResponse(null, makeInit(status, opts.headers)),
+                      );
+                    } else {
+                      resolve(
+                        HttpResponse.json(
+                          opts.body as Exclude<T, undefined>,
+                          makeInit(status, opts.headers),
+                        ),
+                      );
+                    }
+                  },
+                  Math.max(0, ms),
+                );
+              });
+            });
+          },
+
+          /**
+           * Handle with custom resolver after the specified delay.
+           */
+          handle<TReq = unknown>(resolver: DynamicResolver<TReq>) {
+            register(method, path, async ({ request, url, params }) => {
+              return new Promise<Response>((resolve) => {
+                setTimeout(
+                  async () => {
+                    const args = await toResolverArgs<TReq>(
+                      request,
+                      url,
+                      params,
+                    );
+                    resolve(await resolver(args));
+                  },
+                  Math.max(0, ms),
+                );
+              });
+            });
+          },
+        };
+      },
+
+      /**
        * Resolve this route with a successful JSON response.
        *
        * @example
@@ -225,6 +301,28 @@ function addInterceptFor(method: HttpMethod) {
 }
 
 /**
+ * Detect if we're running in a test environment.
+ */
+function isTestEnvironment(): boolean {
+  return !!(
+    typeof process !== "undefined" &&
+    process.env &&
+    (process.env.VITEST ||
+      process.env.JEST_WORKER_ID ||
+      process.env.NODE_ENV === "test")
+  );
+}
+
+/**
+ * Get the default onUnhandledRequest strategy based on environment.
+ * - In test environments: 'error' (strict)
+ * - Otherwise: 'warn' (permissive)
+ */
+function getDefaultOnUnhandledRequest(): "error" | "warn" {
+  return isTestEnvironment() ? "error" : "warn";
+}
+
+/**
  * Public fluent API
  */
 
@@ -238,11 +336,32 @@ export const intercept = {
   options: addInterceptFor("OPTIONS"),
 
   /**
-   * Start or update intercept. baseUrl is intentionally unsupported everywhere.
+   * Start or update intercept.
    * Returns `this` to allow chaining `.origin(...)`.
+   *
+   * @example
+   * // With explicit onUnhandledRequest
+   * intercept.listen({ onUnhandledRequest: 'error' });
+   *
+   * @example
+   * // With origin convenience
+   * intercept.listen({
+   *   origin: 'https://api.example.com',
+   *   onUnhandledRequest: 'error'
+   * });
+   *
+   * @example
+   * // Auto-detect based on environment (error in tests, warn otherwise)
+   * intercept.listen({});
    */
-  listen(options: ListenOptions) {
-    server.listen({ onUnhandledRequest: options.onUnhandledRequest });
+  listen(options: ListenOptions = {}) {
+    server.listen({
+      onUnhandledRequest:
+        options.onUnhandledRequest ?? getDefaultOnUnhandledRequest(),
+    });
+    if (options.origin) {
+      setOrigin(options.origin);
+    }
     return this as typeof intercept;
   },
 
@@ -300,3 +419,45 @@ export const intercept = {
     resetOrigin();
   },
 };
+
+/**
+ * Create a test setup helper that reduces boilerplate in test files.
+ * Returns an object with start/reset/close methods for use in test lifecycle hooks.
+ *
+ * @example
+ * const setup = createSetup({
+ *   origin: 'https://api.example.com',
+ *   onUnhandledRequest: 'error'
+ * });
+ *
+ * beforeAll(setup.start);
+ * afterEach(setup.reset);
+ * afterAll(setup.close);
+ */
+export function createSetup(options: ListenOptions = {}) {
+  return {
+    /**
+     * Start intercept with the provided options.
+     * Use in beforeAll() or beforeEach().
+     */
+    start: () => {
+      intercept.listen(options);
+    },
+
+    /**
+     * Reset all registered handlers.
+     * Use in afterEach() to ensure test isolation.
+     */
+    reset: () => {
+      intercept.reset();
+    },
+
+    /**
+     * Close intercept and restore all globals.
+     * Use in afterAll() for cleanup.
+     */
+    close: () => {
+      intercept.close();
+    },
+  };
+}

@@ -1,4 +1,3 @@
-import { INTERCEPT_LOG_PREFIX } from "./constants";
 import type { ListenOptions, OnUnhandledRequestStrategy } from "./types";
 import { validateOrigin } from "./utils";
 
@@ -52,20 +51,10 @@ global[STORE_KEY] = store;
 
 /**
  * Get the current configuration.
- * Throws if any config value is not initialized (i.e., listen() hasn't been called).
+ * Returns the config even if not fully initialized (for adapter use).
  */
-export function getConfig(): Readonly<Required<NonNullable<ListenOptions>>> {
-  const { config } = store;
-
-  if (config.onUnhandledRequest === null) {
-    throw new Error(
-      `${INTERCEPT_LOG_PREFIX} Configuration not initialized. Call intercept.listen({ onUnhandledRequest: ... }) first.`,
-    );
-  }
-
-  return {
-    onUnhandledRequest: config.onUnhandledRequest,
-  };
+export function getConfig(): Readonly<StoreConfig> {
+  return store.config;
 }
 
 /**

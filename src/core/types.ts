@@ -11,6 +11,22 @@ export type JsonHeaders = Record<string, string>;
 export type JsonBodyType = unknown;
 
 /**
+ * Extract path parameter names from a path string.
+ *
+ * @example
+ * ExtractPathParams<"/users/:id"> => { id: string }
+ * ExtractPathParams<"/users/:userId/posts/:postId"> => { userId: string; postId: string }
+ * ExtractPathParams<"/users"> => {}
+ */
+export type ExtractPathParams<T extends string> = string extends T
+  ? Record<string, string> // fallback for non-literal strings
+  : T extends `${infer _Start}:${infer Param}/${infer Rest}`
+    ? { [K in Param | keyof ExtractPathParams<Rest>]: string }
+    : T extends `${infer _Start}:${infer Param}`
+      ? { [K in Param]: string }
+      : Record<string, never>;
+
+/**
  * Strategy to use when a request is not handled by any registered route.
  *
  * - "warn": Log a warning, then delegate to the real transport (bypass).
@@ -31,8 +47,10 @@ export type OnUnhandledRequestStrategy =
  * Options for `server.listen`.
  */
 export type ListenOptions = {
-  /** What to do when no handler matches the request (default: "warn"). */
-  onUnhandledRequest: OnUnhandledRequestStrategy;
+  /** What to do when no handler matches the request (default: auto-detected based on environment). */
+  onUnhandledRequest?: OnUnhandledRequestStrategy;
+  /** Optional origin to set for relative paths (e.g., "https://api.example.com"). Can be updated later with .origin(). */
+  origin?: string;
 };
 
 // Discriminated union for core dispatch:
@@ -43,8 +61,16 @@ export type TryHandleResult =
 // Adapter management
 export type CoreForAdapter = {
   tryHandle: (req: Request) => Promise<TryHandleResult>;
-  getOptions: () => { onUnhandledRequest?: OnUnhandledRequestStrategy };
-  logUnhandled: (kind: "warn" | "error", req: Request, url: URL) => void;
+  getOptions: () => {
+    onUnhandledRequest?: OnUnhandledRequestStrategy | undefined;
+  };
+  getRegisteredHandlers: () => Array<{ method: HttpMethod; path: Path }>;
+  logUnhandled: (
+    kind: "warn" | "error",
+    req: Request,
+    url: URL,
+    registeredHandlers?: Array<{ method: HttpMethod; path: Path }>,
+  ) => void;
 };
 
 export type Adapter = {
