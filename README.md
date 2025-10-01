@@ -25,13 +25,67 @@ Modern frontend apps talk to APIs. In tests, you want predictable responses with
 
 ---
 
+## Table of Contents
+
+- [Features](#features)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Quick start (Vitest)](#quick-start-vitest)
+  - [Required setup](#required-setup)
+  - [Your first test](#your-first-test)
+- [Understanding Origins](#understanding-origins)
+  - [Relative paths require an origin](#relative-paths-require-an-origin)
+  - [Absolute URLs ignore origin](#absolute-urls-ignore-origin)
+  - [When to use which approach](#when-to-use-which-approach)
+  - [Scoping origin per test file](#scoping-origin-per-test-file)
+- [Using with React + TanStack Query](#using-with-react--tanstack-query)
+  - [Test with intercept](#test-with-intercept)
+- [Defining routes](#defining-routes)
+  - [Basic responses](#basic-responses)
+  - [Error responses](#error-responses)
+  - [Path parameters](#path-parameters)
+  - [Simulate fetching / pending state](#simulate-fetching--pending-state)
+  - [Dynamic resolvers with `.handle()`](#dynamic-resolvers-with-handle)
+- [Ignoring requests](#ignoring-requests)
+- [Unhandled requests](#unhandled-requests)
+  - [Strategies](#strategies)
+- [Axios adapter (optional)](#axios-adapter-optional)
+- [Common Testing Patterns](#common-testing-patterns)
+  - [Pattern 1: Baseline routes in setup, overrides in tests](#pattern-1-baseline-routes-in-setup-overrides-in-tests)
+  - [Pattern 2: Per-test origin for multi-tenant apps](#pattern-2-per-test-origin-for-multi-tenant-apps)
+  - [Pattern 3: Test error scenarios](#pattern-3-test-error-scenarios)
+  - [Pattern 4: Testing authentication flows](#pattern-4-testing-authentication-flows)
+  - [Pattern 5: Ignoring non-essential requests](#pattern-5-ignoring-non-essential-requests)
+- [API reference](#api-reference)
+  - [`intercept.listen(options)`](#interceptlistenoptions)
+  - [`intercept.origin(url)`](#interceptoriginurl)
+  - [`intercept.<method>(path)`](#interceptmethodpath)
+  - [`intercept.ignore(paths)`](#interceptignorepaths)
+  - [`intercept.reset()`](#interceptreset)
+  - [`intercept.close()`](#interceptclose)
+- [Troubleshooting](#troubleshooting)
+  - ["No intercept handler matched this request"](#no-intercept-handler-matched-this-request)
+  - ["Cannot find module 'axios' or its type declarations"](#cannot-find-module-axios-or-its-type-declarations)
+  - [ESM/CJS issues](#esmcjs-issues)
+  - [Tests are flaky or handlers leak between tests](#tests-are-flaky-or-handlers-leak-between-tests)
+  - [Relative paths don't work](#relative-paths-dont-work)
+- [Comparison with MSW](#comparison-with-msw)
+- [Advanced Usage](#advanced-usage)
+  - [Creating custom adapters](#creating-custom-adapters)
+  - [Type-safe responses](#type-safe-responses)
+  - [Conditional responses](#conditional-responses)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
+
 ## Features
 
 - **Zero server**: intercepts Node 20+ native `fetch` directly
 - **Route DSL**: `intercept.get('/users').resolve([{ id: 1 }])`
 - **Smart defaults**: e.g., `POST` → `201` by default, `DELETE` → `204`
 - **Unhandled strategies**: warn, bypass, or error
-- **Composable**: `server.use(...)`, `server.resetHandlers()`, `server.close()`
+- **Composable**: `intercept.reset()`, `intercept.close()`
 - **Adapters**: attach Axios (or write your own) so the same routes cover both `fetch` and your client
 - **TypeScript-first**: no `any` in public API; path params are inferred
 
@@ -68,33 +122,141 @@ No need to install `axios` unless you plan to attach the Axios adapter.
 ### Required setup
 
 `intercept` will **not work** until you start the server in your test environment.  
-The recommended way is to create a shared setup file (e.g. `setupTests.ts`) and call `server.listen()` there:
+The recommended way is to create a shared setup file (e.g. `setupTests.ts`) and call `intercept.listen()` there:
 
 ```ts
 // setupTests.ts
-import { server } from "@klogt/intercept";
+import { intercept } from "@klogt/intercept";
 
 beforeAll(() => {
-  server.listen({ baseUrl: "http://localhost" });
+  intercept
+    .listen({ onUnhandledRequest: 'error' })
+    .origin('https://api.example.com');
 });
 
 afterEach(() => {
-  server.resetHandlers();
+  intercept.reset();
 });
 
 afterAll(() => {
-  server.close();
+  intercept.close();
 });
 ```
+
+**Important**: Configure this file in your `vitest.config.ts`:
+
+```ts
+// vitest.config.ts
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  test: {
+    setupFiles: ['./setupTests.ts'],
+  },
+});
+```
+
+### Your first test
 
 Create a test file, e.g. `tests/users.test.ts`:
 
 ```ts
-it("renders users from API", async () => {
-  // Example routes you can reuse per test or override in tests
-  intercept.get("/users").resolve([{ id: 1, name: "Ada" }]);
-  // Your component calls fetch('/users') underneath
-  // The declared route above returns 200 with the JSON array
+import { intercept } from "@klogt/intercept";
+
+it("fetches users from API", async () => {
+  // Mock the API response
+  intercept.get("/users").resolve([
+    { id: 1, name: "Ada" },
+    { id: 2, name: "Grace" }
+  ]);
+
+  // Your code calls fetch('/users') - it gets the mocked response
+  const res = await fetch('/users');
+  const users = await res.json();
+  
+  expect(users).toHaveLength(2);
+  expect(users[0].name).toBe("Ada");
+});
+```
+
+---
+
+## Understanding Origins
+
+### Relative paths require an origin
+
+When you use **relative paths** like `/users`, intercept needs to know the base URL. That's what `.origin()` is for:
+
+```ts
+intercept
+  .listen({ onUnhandledRequest: 'error' })
+  .origin('https://api.example.com');
+
+// Now this works:
+intercept.get("/users").resolve([{ id: 1 }]);
+// Matches: https://api.example.com/users
+```
+
+### Absolute URLs ignore origin
+
+If you use **absolute URLs**, they match exactly and ignore the origin:
+
+```ts
+intercept
+  .get("https://payments.stripe.com/v1/charges")
+  .resolve({ id: "ch_123" });
+
+// Matches exactly: https://payments.stripe.com/v1/charges
+// Does NOT use the origin from .origin()
+```
+
+### When to use which approach
+
+- **Relative paths**: Use when all your API calls go to the same base URL
+  ```ts
+  .origin('https://api.example.com')
+  intercept.get("/users").resolve(...)    // → https://api.example.com/users
+  intercept.post("/posts").resolve(...)   // → https://api.example.com/posts
+  ```
+
+- **Absolute URLs**: Use when you need to mock specific external services
+  ```ts
+  intercept.get("https://cdn.example.com/config.json").resolve(...)
+  intercept.post("https://analytics.example.com/events").resolve(...)
+  ```
+
+- **Mix both**: You can use both approaches in the same test!
+
+### Scoping origin per test file
+
+Set origin in `beforeAll` to apply it to all tests in that file:
+
+```ts
+describe("User API", () => {
+  beforeAll(() => {
+    intercept.origin('https://api.example.com');
+  });
+
+  it("fetches users", async () => {
+    intercept.get("/users").resolve([{ id: 1 }]);
+    // ... test code
+  });
+});
+```
+
+Or per test in `beforeEach`:
+
+```ts
+describe("Multi-tenant tests", () => {
+  beforeEach(() => {
+    const tenant = getCurrentTenant();
+    intercept.origin(`https://${tenant}.api.example.com`);
+  });
+
+  it("fetches tenant-specific data", async () => {
+    intercept.get("/data").resolve({ tenant: "acme" });
+    // ... test code
+  });
 });
 ```
 
@@ -111,16 +273,18 @@ Here's a simple example component:
 import { useQuery } from "@tanstack/react-query";
 
 export function Users() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ["users"],
     queryFn: async () => {
       const res = await fetch("/users");
-      if (!res.ok) throw new Error("Network error");
+      if (!res.ok) throw new Error("Failed to fetch users");
       return res.json();
     },
   });
 
   if (isLoading) return <div>Loading...</div>;
+  if (error) return <div>Error: {error.message}</div>;
+  
   return (
     <ul>
       {data.map((u: { id: number; name: string }) => (
@@ -140,46 +304,119 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Users } from "./Users";
 import { intercept } from "@klogt/intercept";
 
-it("renders mocked users", async () => {
-  // Declare a mock response for GET /users
+function renderWithQuery(ui: React.ReactElement) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+    },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      {ui}
+    </QueryClientProvider>
+  );
+}
+
+it("renders users from mocked API", async () => {
   intercept.get("/users").resolve([
     { id: 1, name: "Ada" },
     { id: 2, name: "Grace" },
   ]);
 
-  const client = new QueryClient();
-  render(
-    <QueryClientProvider client={client}>
-      <Users />
-    </QueryClientProvider>
-  );
+  renderWithQuery(<Users />);
 
   expect(await screen.findByText("Ada")).toBeInTheDocument();
   expect(await screen.findByText("Grace")).toBeInTheDocument();
 });
-```
 
-This way, your component and React Query behave as if the API responded, but everything is handled in-memory with `@klogt/intercept`.
+it("shows error state on API failure", async () => {
+  intercept.get("/users").reject({
+    status: 500,
+    body: { message: "Server error" }
+  });
+
+  renderWithQuery(<Users />);
+
+  expect(await screen.findByText(/Error:/)).toBeInTheDocument();
+});
+```
 
 ---
 
 ## Defining routes
 
+### Basic responses
+
 ```ts
 // GET /users → 200 with array
-intercept.get("/users").resolve([{ id: 1 }]);
+intercept.get("/users").resolve([{ id: 1, name: "Ada" }]);
 
 // POST /users → 201 with body
 intercept.post("/users").resolve({ id: 2, name: "Grace" });
 
-// DELETE /users/2 → 204 (no content) – body is ignored when status = 204
+// DELETE /users/2 → 204 (no content)
 intercept.delete("/users/:id").resolve(null, { status: 204 });
 
-// Provide headers or override status
-intercept.get("/profile").resolve({ id: "me" }, {
-  status: 200,
-  headers: { "x-test": "ok" },
+// PUT with custom status and headers
+intercept.put("/profile").resolve(
+  { id: "me", updated: true },
+  {
+    status: 200,
+    headers: { "x-request-id": "abc123" },
+  }
+);
+```
+
+### Error responses
+
+```ts
+// Reject with error status and body
+intercept.post("/login").reject({
+  status: 401,
+  body: { code: "INVALID_CREDENTIALS", message: "Invalid username or password" }
 });
+
+// 404 Not Found
+intercept.get("/users/:id").reject({
+  status: 404,
+  body: { error: "User not found" }
+});
+
+// 422 Validation Error
+intercept.post("/users").reject({
+  status: 422,
+  body: {
+    errors: [
+      { field: "email", message: "Email is required" }
+    ]
+  }
+});
+```
+
+### Path parameters
+
+```ts
+// Match dynamic segments with :param
+intercept.get("/users/:id").resolve({ id: "123", name: "Ada" });
+
+// Access params in dynamic resolver
+intercept.get("/users/:id").handle(({ params }) => {
+  return Response.json({
+    id: params.id,
+    name: `User ${params.id}`
+  });
+});
+
+// Multiple params
+intercept.get("/orgs/:orgId/repos/:repoId").handle(({ params }) => {
+  return Response.json({
+    org: params.orgId,
+    repo: params.repoId
+  });
+});
+
+// Catch-all wildcard
+intercept.get("/*").resolve({ message: "Catch all requests" });
 ```
 
 ### Simulate fetching / pending state
@@ -195,56 +432,71 @@ intercept.get("/slow").fetching();
 intercept.get("/slow").fetching({ delayMs: 800 });
 
 // Resolve after 500ms with a 200 + custom headers
-intercept.get("/slow").fetching({ delayMs: 500, status: 200, headers: { "x-test": "ok" } });
+intercept.get("/slow").fetching({ 
+  delayMs: 500, 
+  status: 200, 
+  headers: { "x-test": "ok" } 
+});
 ```
 
 Example with React:
 
 ```tsx
-// In your test
 it("shows loading state while fetching", async () => {
-  intercept.get("/users").fetching({ delayMs: 800 });
+  // Delay the response by 500ms
+  intercept.get("/users").fetching({ delayMs: 500 });
 
-
-  const client = new QueryClient();
+  const queryClient = new QueryClient();
   render(
-    <QueryClientProvider client={client}>
+    <QueryClientProvider client={queryClient}>
       <Users />
     </QueryClientProvider>
   );
 
-  // Immediately see the loading indicator
+  // Initially shows loading
   expect(screen.getByText("Loading...")).toBeInTheDocument();
 
-  // After ~800ms the query resolves and data appears
-  expect(await screen.findByText("Ada")).toBeInTheDocument();
+  // After ~500ms, loading disappears
+  await waitFor(() => {
+    expect(screen.queryByText("Loading...")).not.toBeInTheDocument();
+  });
 });
 ```
 
----
+### Dynamic resolvers with `.handle()`
 
-### Path params & wildcards
-
-- `":id"` style params are supported: `"/users/:id"`
-- Catch-all: `"/*"` (relative to your `baseUrl`)
-
-Access to `request`, `url`, `params`, and parsed `json` is available in dynamic resolvers (see below).
-
-### Dynamic resolvers
-
-Need to compute a response from the incoming request?
+Need to compute a response based on the incoming request? Use `.handle()` for full control:
 
 ```ts
-intercept.post("/login").resolve(async (_json, { request, url, params }) => {
-  const body = await request.clone().json();
-  if (body.username === "admin") {
-    return { token: "dev" };
+intercept.post("/login").handle(async ({ request, body, params }) => {
+  // body is parsed JSON (best-effort)
+  if (body?.username === "admin" && body?.password === "secret") {
+    return Response.json({ token: "abc123", user: { id: 1, name: "Admin" } });
   }
-  return new Response("Unauthorized", { status: 401 });
+  
+  return Response.json(
+    { error: "Invalid credentials" },
+    { status: 401 }
+  );
+});
+
+// Access request headers
+intercept.get("/protected").handle(({ request }) => {
+  const auth = request.headers.get("Authorization");
+  
+  if (!auth) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  
+  return Response.json({ data: "secret data" });
+});
+
+// Use path params
+intercept.delete("/users/:id").handle(({ params }) => {
+  console.log(`Deleting user ${params.id}`);
+  return new Response(null, { status: 204 });
 });
 ```
-
-> If you return a plain object, it's sent as JSON with defaults. Return a `Response` to take full control.
 
 ---
 
@@ -252,22 +504,38 @@ intercept.post("/login").resolve(async (_json, { request, url, params }) => {
 
 Ignore requests to given paths across **all HTTP methods**. Handy for analytics, health checks, or any traffic you don't want your tests to care about. Returns **204 No Content** immediately to prevent test failures.
 
-```typescript
+```ts
 intercept.ignore(paths: ReadonlyArray<Path>)
 ```
 
 **Example:**
-```typescript
-// Ignore analytics and health check endpoints
+```ts
+// In setupTests.ts or beforeEach
 intercept.ignore(['/analytics', '/ping', '/health-check']);
 
-// Must be called inside a beforeEach
-beforeEach(() => {
-  intercept.ignore(['/metrics', '/analytics/*']);
-});
+// All these return 204 immediately:
+fetch('/analytics');           // GET
+fetch('/ping', { method: 'POST' });  // POST
+fetch('/health-check');        // any method
 ```
 
-All HTTP methods (GET, POST, PUT, PATCH, DELETE, OPTIONS) are automatically handled for each ignored path.
+**Common use cases:**
+
+```ts
+// Ignore analytics and monitoring
+intercept.ignore([
+  '/api/analytics/*',
+  '/api/metrics',
+  '/api/telemetry'
+]);
+
+// Ignore third-party health checks
+intercept.ignore([
+  '/health',
+  '/ready',
+  '/livez'
+]);
+```
 
 ---
 
@@ -276,11 +544,46 @@ All HTTP methods (GET, POST, PUT, PATCH, DELETE, OPTIONS) are automatically hand
 Configure once when starting the server:
 
 ```ts
-server.listen({ onUnhandledRequest: "warn" });
-// "warn": console.warn + delegate to real transport
-// "bypass": silently delegate
-// "error": throw or return 501 (depending on adapter)
+intercept.listen({ onUnhandledRequest: "error" });
 ```
+
+### Strategies
+
+- **`"error"`** (recommended for tests): Blocks unhandled requests with 501 status and logs an error
+  ```
+  [@klogt/intercept] ❌ Unhandled request (error mode)
+     → GET https://api.example.com/unknown
+  
+  No intercept handler matched this request.
+  The request was blocked with a 501 response.
+  Tip: add one with:
+     intercept.get('/unknown').resolve(...)
+  ```
+
+- **`"warn"`**: Logs a warning but allows the request to pass through to the real transport
+  ```
+  [@klogt/intercept] 🚧 Unhandled request
+     → GET https://api.example.com/unknown
+  
+  No intercept handler matched this request.
+  Tip: add one with:
+     intercept.get('/unknown').resolve(...)
+  ```
+
+- **`"bypass"`**: Silently allows requests to pass through (no logging)
+
+- **Function**: Decide dynamically per request
+  ```ts
+  intercept.listen({
+    onUnhandledRequest: ({ request, url }) => {
+      // Ignore OPTIONS requests
+      if (request.method === 'OPTIONS') return 'bypass';
+      
+      // Warn about others
+      return 'warn';
+    }
+  });
+  ```
 
 ---
 
@@ -292,133 +595,447 @@ server.listen({ onUnhandledRequest: "warn" });
 import axios from "axios";
 import { createAxiosAdapter } from "@klogt/intercept/axios";
 
-const instance = axios.create({ baseURL: "http://localhost" });
-server.attachAdapter(createAxiosAdapter(instance));
+const apiClient = axios.create({
+  baseURL: "https://api.example.com"
+});
+
+// In setupTests.ts after intercept.listen()
+const axiosAdapter = createAxiosAdapter(apiClient);
+// Note: The server object is not exposed, but adapters can be managed through intercept
 ```
 
 **No runtime axios dependency**: the adapter's types reference `axios` conditionally so your library/app doesn't pull axios unless you install it yourself.
 
 ---
 
-## API reference (essentials)
+## Common Testing Patterns
 
-### `server.listen(options)`
-
-Start intercepting.
+### Pattern 1: Baseline routes in setup, overrides in tests
 
 ```ts
-server.listen({
-  baseUrl?: string; // default: "http://localhost"
-  onUnhandledRequest?: "warn" | "bypass" | "error" | ((req) => Strategy);
+// setupTests.ts
+beforeAll(() => {
+  intercept
+    .listen({ onUnhandledRequest: 'error' })
+    .origin('https://api.example.com');
+    
+  // Baseline routes that apply to all tests
+  intercept.get("/config").resolve({ version: "1.0" });
+  intercept.get("/health").resolve({ status: "ok" });
+});
+
+// users.test.ts
+it("fetches users", () => {
+  // Override or add specific routes for this test
+  intercept.get("/users").resolve([{ id: 1 }]);
+  // ... test code
 });
 ```
 
-### `server.use(...handlers)`
+### Pattern 2: Per-test origin for multi-tenant apps
 
-Register additional handlers (rarely needed directly — use `intercept.*`).
+```ts
+describe("Tenant-specific tests", () => {
+  beforeEach(() => {
+    const tenant = 'acme'; // could be from test context
+    intercept.origin(`https://${tenant}.api.example.com`);
+  });
 
-### `server.resetHandlers()`
+  it("fetches tenant data", async () => {
+    intercept.get("/data").resolve({ tenant: "acme" });
+    // Matches: https://acme.api.example.com/data
+  });
+});
+```
 
-Clear handlers added since `listen()` (keeps the initial ones if any).
+### Pattern 3: Test error scenarios
 
-### `server.close()`
+```ts
+it("handles network errors gracefully", async () => {
+  intercept.get("/users").reject({
+    status: 500,
+    body: { error: "Internal server error" }
+  });
 
-Stop intercepting and restore globals/adapters.
+  const { result } = renderHook(() => useUsers(), {
+    wrapper: QueryClientProvider
+  });
 
-### `server.attachAdapter(adapter)`
+  await waitFor(() => {
+    expect(result.current.error).toBeTruthy();
+  });
+});
 
-Attach a client adapter (e.g. Axios) so routes apply to that client as well.
+it("handles timeout", async () => {
+  // Simulate a request that never completes
+  intercept.get("/users").fetching(); // hangs forever
+
+  // Your component should show loading state indefinitely
+  // or timeout after your configured limit
+});
+```
+
+### Pattern 4: Testing authentication flows
+
+```ts
+it("redirects to login on 401", async () => {
+  intercept.get("/profile").reject({
+    status: 401,
+    body: { error: "Unauthorized" }
+  });
+
+  render(<App />);
+
+  await waitFor(() => {
+    expect(screen.getByText("Please log in")).toBeInTheDocument();
+  });
+});
+
+it("retries with new token after refresh", async () => {
+  let attempt = 0;
+  
+  intercept.get("/profile").handle(({ request }) => {
+    attempt++;
+    const auth = request.headers.get("Authorization");
+    
+    if (attempt === 1 || !auth) {
+      return Response.json({ error: "Token expired" }, { status: 401 });
+    }
+    
+    return Response.json({ id: 1, name: "Ada" });
+  });
+
+  // Your app should detect 401, refresh token, and retry
+  // ... rest of test
+});
+```
+
+### Pattern 5: Ignoring non-essential requests
+
+```ts
+beforeEach(() => {
+  // Ignore analytics so they don't cause test failures
+  intercept.ignore([
+    '/api/analytics/*',
+    '/api/tracking',
+    '/health'
+  ]);
+});
+```
+
+---
+
+## API reference
+
+### `intercept.listen(options)`
+
+Start intercepting. Must be called before defining routes.
+
+```ts
+intercept.listen({
+  onUnhandledRequest?: "warn" | "bypass" | "error" | ((args) => Strategy);
+});
+```
+
+Returns `intercept` for chaining with `.origin()`.
+
+### `intercept.origin(url)`
+
+Set the base URL for relative paths. Can be called in `beforeAll` (applies to whole file) or `beforeEach` (per-test).
+
+```ts
+intercept.origin('https://api.example.com');
+```
+
+Returns `intercept` for chaining.
 
 ### `intercept.<method>(path)`
 
 Create a route for `GET | POST | PUT | PATCH | DELETE | OPTIONS`.
 
-Returns an object with:
+```ts
+intercept.get(path: Path)
+intercept.post(path: Path)
+intercept.put(path: Path)
+intercept.patch(path: Path)
+intercept.delete(path: Path)
+intercept.options(path: Path)
+```
+
+Each returns an object with:
+
+#### `.resolve(data, init?)`
+
+Return successful JSON response:
 
 ```ts
-resolve<T>(jsonOrResolver: T | DynamicResolver<T>, init?: {
-  status?: number;
+resolve<T>(data: T, init?: {
+  status?: number;      // Default: method-specific (200, 201, 204)
   headers?: Record<string, string>;
 }): void;
 ```
 
-If `status` is `204`, any body is stripped.
+If `status` is `204`, body is stripped automatically.
+
+#### `.reject(opts?)`
+
+Return error response:
+
+```ts
+reject<T>(opts?: {
+  status?: number;      // Default: 400
+  body?: T | undefined; // Optional error body
+  headers?: Record<string, string>;
+}): void;
+```
+
+#### `.fetching(init?)`
+
+Simulate pending/loading state:
+
+```ts
+fetching(init?: {
+  delayMs?: number;     // Undefined = hang forever
+  status?: number;      // Default: 204
+  headers?: Record<string, string>;
+}): void;
+```
+
+#### `.handle(resolver)`
+
+Full control with custom logic:
+
+```ts
+handle<TRequest>(
+  resolver: (args: {
+    request: Request;
+    url: URL;
+    params: Record<string, string>;
+    body: TRequest | undefined;  // Parsed JSON, best-effort
+  }) => Response | Promise<Response>
+): void;
+```
 
 ### `intercept.ignore(paths)`
 
-Ignore requests to given paths across all HTTP methods.
+Ignore requests to given paths across all HTTP methods:
 
 ```ts
 intercept.ignore(paths: ReadonlyArray<Path>): void;
 ```
 
----
+Returns 204 No Content immediately.
 
-## Testing patterns
+### `intercept.reset()`
 
-- Put `server.listen/resetHandlers/close` in a dedicated **setup file** and reference it from your test runner config.
-- Define **baseline routes** in the setup and **override** within individual tests as needed.
-- Use `onUnhandledRequest: "error"` locally to smoke out missing handlers.
-- Use `intercept.ignore()` to silence analytics, health checks, or other unimportant traffic.
+Clear all registered handlers. Use in `afterEach` for test isolation:
+
+```ts
+afterEach(() => {
+  intercept.reset();
+});
+```
+
+### `intercept.close()`
+
+Stop intercepting, detach adapters, restore globals, and clear all state. Use in `afterAll`:
+
+```ts
+afterAll(() => {
+  intercept.close();
+});
+```
 
 ---
 
 ## Troubleshooting
 
+### "No intercept handler matched this request"
+
+This error means you tried to make a request that doesn't have a matching route.
+
+**Common causes:**
+
+1. **Forgot to set origin** for relative paths:
+   ```ts
+   // ❌ This won't work
+   intercept.get("/users").resolve([...]);
+   await fetch('/users');  // Error: no handler matched
+   
+   // ✅ Set origin first
+   intercept.origin('https://api.example.com');
+   intercept.get("/users").resolve([...]);
+   await fetch('/users');  // Works!
+   ```
+
+2. **Path mismatch** (typo or wrong params):
+   ```ts
+   intercept.get("/users").resolve([...]);
+   await fetch('/user');  // ❌ Typo - should be /users
+   ```
+
+3. **Method mismatch**:
+   ```ts
+   intercept.get("/users").resolve([...]);
+   await fetch('/users', { method: 'POST' });  // ❌ Handler is for GET
+   ```
+
 ### "Cannot find module 'axios' or its type declarations"
 
-You don't need axios unless you attach the adapter. If your TS setup still tries to resolve axios types, make sure you're not importing from `@klogt/intercept/axios` unless axios is installed. The adapter itself uses a conditional type import to avoid a hard dependency.
+You don't need axios unless you attach the adapter. If you see this error:
 
-### ESM/CJS
+1. Either install axios: `npm i axios`
+2. Or don't import from `@klogt/intercept/axios`
 
-This package targets **ES Modules**. If your runner enforces CJS, enable ESM support or transpile accordingly.
+The axios adapter uses conditional type imports to avoid a hard dependency.
 
-### Node version
+### ESM/CJS issues
 
-Requires **Node 20+** (native `fetch`). Older Node versions are unsupported.
+This package targets **ES Modules**. If your runner enforces CJS:
+
+1. Enable ESM support in your test runner
+2. Or transpile the package in your build config
+
+### Tests are flaky or handlers leak between tests
+
+Always call `intercept.reset()` in `afterEach`:
+
+```ts
+afterEach(() => {
+  intercept.reset();
+});
+```
+
+This ensures each test starts with a clean slate.
+
+### Relative paths don't work
+
+Make sure you've called `.origin()`:
+
+```ts
+// In setupTests.ts or beforeAll
+intercept
+  .listen({ onUnhandledRequest: 'error' })
+  .origin('https://api.example.com');
+```
+
+Or use absolute URLs:
+
+```ts
+intercept.get("https://api.example.com/users").resolve([...]);
+```
 
 ---
 
-## Roadmap
+## Comparison with MSW
 
-- **HTTP record/replay helpers**
-- **Devtools-style inspector for requests/responses**
+If you're familiar with [MSW](https://mswjs.io/), here's how `@klogt/intercept` compares:
 
-### DX improvements (planned)
+| Feature | @klogt/intercept | MSW |
+|---------|------------------|-----|
+| **Setup complexity** | Minimal - one setup file | Requires worker setup |
+| **Native fetch support** | Built-in (Node 20+) | Via msw/node |
+| **Route definition** | Inline in tests | Inline or separate handlers |
+| **Path params** | `:param` syntax | `:param` syntax |
+| **TypeScript** | First-class, no `any` | Good support |
+| **Browser support** | No (test-only) | Yes |
+| **Bundle size** | Small | Larger |
+| **Maturity** | New | Established |
 
-- **Subtle warnings for unhandled requests**  
-  Reduce terminal noise by making warnings less intrusive, while still visible.  
+**Choose @klogt/intercept if:**
+- You only need test interception (not browser)
+- You want minimal setup
+- You prefer Node 20+ native features
+- You want a lightweight package
 
-- **Better support for relative paths**  
-  Improve type hints so developers can see how relative paths resolve with `baseUrl` from config in server.listen({ baseUrl: "http://pokeApi"}).  
-  ```ts
-  intercept.get("/api/v2/pokemon");
-  // Hint: resolved full URL → http://pokeApi/api/v2/pokemon
-  ```
+**Choose MSW if:**
+- You need browser support (dev mode mocking)
+- You want battle-tested stability
+- You need advanced features like streaming
 
-- **Clearer type errors for URL paths**  
-  Replace cryptic TS errors with actionable hints.  
-  ```
-  URL paths in intercept must start with "/". Did you mean "/api/v2/pokemon"?
-  ```
+---
 
-- **Documentation for server setup in tests**  
-  Add README examples for using `setupTest.ts` / `setup.test.ts`, showing that  
-  `server.listen()` must be called for `intercept` to work.  
+## Advanced Usage
 
-- **Typed response examples in README**  
-  Show how to specify the response type to prevent debugging issues:  
-  ```ts
-  intercept.get("/api/v2/pokemon").resolve<{ results: Pokemon[] }>({
-    results: [
-      { name: "bulbasaur" },
-      { name: "ivysaur" },
-      { name: "venusaur" },
-    ],
-  });
-  ```
+### Creating custom adapters
+
+You can create your own adapters for other HTTP clients:
+
+```ts
+import type { Adapter, CoreForAdapter } from "@klogt/intercept";
+
+function createMyAdapter(client: MyClient): Adapter {
+  return {
+    attach(core: CoreForAdapter) {
+      // Wrap client's request method
+      const originalRequest = client.request;
+      
+      client.request = async (config) => {
+        const req = configToRequest(config);
+        const result = await core.tryHandle(req);
+        
+        if (result.matched) {
+          return responseToClient(result.res);
+        }
+        
+        // Unhandled - decide what to do
+        return originalRequest.call(client, config);
+      };
+    },
+    
+    detach() {
+      // Restore original method
+    }
+  };
+}
+```
+
+### Type-safe responses
+
+Use TypeScript generics for type-safe responses:
+
+```ts
+type User = { id: number; name: string };
+
+intercept.get("/users").resolve<User[]>([
+  { id: 1, name: "Ada" },
+  { id: 2, name: "Grace" }
+]);
+
+// Type error if response doesn't match
+intercept.get("/users").resolve<User[]>([
+  { id: 1 }  // ❌ Error: missing 'name'
+]);
+```
+
+### Conditional responses
+
+Use `.handle()` for complex conditional logic:
+
+```ts
+let callCount = 0;
+
+intercept.get("/users").handle(() => {
+  callCount++;
+  
+  if (callCount === 1) {
+    return Response.json({ error: "First call fails" }, { status: 500 });
+  }
+  
+  return Response.json([{ id: 1, name: "Ada" }]);
+});
+
+// First call fails, second succeeds
+```
+
+---
+
+## Contributing
+
+Contributions are welcome! Please open an issue or PR on [GitHub](https://github.com/klogt-as/intercept).
+
 ---
 
 ## License
 
-MIT © Klogt
+MIT © [Klogt](https://github.com/klogt-as)
