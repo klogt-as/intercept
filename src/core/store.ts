@@ -1,10 +1,8 @@
-// store.ts
 import { INTERCEPT_LOG_PREFIX } from "./constants";
 import type { ListenOptions } from "./types";
 
 /**
- * Utility type that makes all properties required
- * and converts their type to `T | null` (never undefined).
+ * Utility type: makes all properties required, converts their type to `T | null`.
  */
 type ToConfig<T> = {
   [K in keyof T]-?: Exclude<T[K], undefined> | null;
@@ -19,29 +17,45 @@ type NonNullConfig<T> = {
  * Initial values for the global store.
  * Note: `null` = "not configured yet".
  */
-const initial: { configs: ToConfig<ListenOptions> } = {
+const initial = {
   configs: {
-    onUnhandledRequest: "warn",
+    onUnhandledRequest: "warn" as ToConfig<ListenOptions>["onUnhandledRequest"],
   },
+  listening: false,
+  origin: null as string | null,
+  originalFetch: null as typeof globalThis.fetch | null,
+  fetchAdapterAttached: false,
 };
 
-// Unique global symbol so this works even if the package is installed twice.
+// Unique global symbol so this works even if the package is installed twice
 const STORE_KEY = Symbol.for("@klogt/intercept.store");
 
 /** Centralized shape of the global store. */
-type Store = { configs: ToConfig<ListenOptions> };
+type Store = {
+  configs: ToConfig<ListenOptions>;
+  listening: boolean;
+  origin: string | null;
+  originalFetch: typeof globalThis.fetch | null;
+  fetchAdapterAttached: boolean;
+};
 
 // Create or retrieve the shared store from globalThis.
 const g = globalThis as Record<PropertyKey, unknown>;
-const store: Store = (g[STORE_KEY] as Store) ?? {
-  configs: { ...initial.configs },
-};
+const store: Store =
+  (g[STORE_KEY] as Store) ??
+  ({
+    configs: { ...initial.configs },
+    listening: initial.listening,
+    origin: initial.origin,
+    originalFetch: initial.originalFetch,
+    fetchAdapterAttached: initial.fetchAdapterAttached,
+  } as Store);
+
 g[STORE_KEY] = store;
 
-/**
- * Read configs and assert that all fields are initialized (non-null).
- * Throws if any field is still null.
- */
+/* ---------------------------------------------
+ * Configs (onUnhandledRequest)
+ * --------------------------------------------*/
 export function getConfigs(): Readonly<NonNullConfig<ListenOptions>> {
   const configs = store.configs;
 
@@ -50,19 +64,13 @@ export function getConfigs(): Readonly<NonNullConfig<ListenOptions>> {
       throw new Error(
         `${INTERCEPT_LOG_PREFIX} Config "${String(
           key,
-        )}" is not initialized. Call server.listen({ ... }) first.`,
+        )}" is not initialized. Call intercept.listen({ ... }) first.`,
       );
     }
   }
-
-  // At this point all fields are non-null; cast to the corresponding non-null type.
   return configs as Readonly<NonNullConfig<ListenOptions>>;
 }
 
-/**
- * Merge next values into the current configs.
- * Accepts partial ToConfig<ListenOptions>, keeps nulls as "not configured".
- */
 export function setConfigs(next: Partial<ToConfig<ListenOptions>>) {
   store.configs = {
     ...store.configs,
@@ -71,7 +79,47 @@ export function setConfigs(next: Partial<ToConfig<ListenOptions>>) {
   };
 }
 
-/** Reset configs back to defaults. */
 export function resetConfigs() {
   store.configs = { ...initial.configs };
+}
+
+/* ---------------------------------------------
+ * Listening flag (single source of truth)
+ * --------------------------------------------*/
+export function isListening(): boolean {
+  return store.listening;
+}
+
+export function setListening(value: boolean) {
+  store.listening = value;
+}
+
+/* ---------------------------------------------
+ * Origin (shared across module instances)
+ * --------------------------------------------*/
+export function getOrigin(): string | null {
+  return store.origin;
+}
+
+export function setOrigin(next: string | null) {
+  store.origin = next;
+}
+
+/* ---------------------------------------------
+ * Fetch patching flags (to restore correctly)
+ * --------------------------------------------*/
+export function getOriginalFetch(): typeof globalThis.fetch | null {
+  return store.originalFetch;
+}
+
+export function setOriginalFetch(fn: typeof globalThis.fetch | null) {
+  store.originalFetch = fn;
+}
+
+export function isFetchAdapterAttached(): boolean {
+  return store.fetchAdapterAttached;
+}
+
+export function setFetchAdapterAttached(value: boolean) {
+  store.fetchAdapterAttached = value;
 }

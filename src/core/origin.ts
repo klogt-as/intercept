@@ -1,4 +1,4 @@
-let _origin: string | null = null;
+import { getOrigin, setOrigin } from "./store";
 
 /** Require protocol + host, no path, no trailing slash. */
 export function setActiveOrigin(input: string) {
@@ -13,13 +13,13 @@ export function setActiveOrigin(input: string) {
   if (normalized.endsWith("//")) {
     throw new Error(`[intercept.origin] Invalid origin: "${input}"`);
   }
-  _origin = normalized;
+  setOrigin(normalized);
 }
 
 export function getActiveOrigin(): string | null {
-  return _origin;
+  return getOrigin();
 }
 
 export function resetActiveOrigin() {
-  _origin = null;
+  setOrigin(null);
 }

@@ -303,6 +303,8 @@ describe("intercept integration (origin + absolute URLs)", () => {
 
   it("matches absolute URL with query exactly (non-throwing miss)", async () => {
     const original = stubOriginalFetchReturning("bypassed", { status: 202 });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {}); // silence log
+
     intercept.listen({ onUnhandledRequest: "warn" });
 
     intercept
@@ -316,6 +318,10 @@ describe("intercept integration (origin + absolute URLs)", () => {
     expect(original).toHaveBeenCalledTimes(1);
     expect(miss.status).toBe(202);
     expect(await miss.text()).toBe("bypassed");
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+
+    warnSpy.mockRestore();
   });
 
   it("chainable origin: origin(...).get(...).resolve(...) works", async () => {
@@ -358,6 +364,7 @@ describe("origin lifecycle via beforeAll (persists and can be overridden)", () =
   });
 
   afterEach(() => {
+    intercept.reset();
     vi.restoreAllMocks();
     vi.useRealTimers();
   });

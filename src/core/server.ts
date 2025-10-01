@@ -2,11 +2,21 @@ import { createFetchAdapter } from "../adapters/fetch";
 import { INTERCEPT_LOG_PREFIX } from "./constants";
 import { logUnhandled } from "./log";
 import { getActiveOrigin, resetActiveOrigin } from "./origin";
-import { getConfigs, resetConfigs, setConfigs } from "./store";
+import {
+  getConfigs,
+  getOriginalFetch,
+  isFetchAdapterAttached,
+  resetConfigs,
+  setConfigs,
+  setFetchAdapterAttached,
+  setOriginalFetch,
+  isListening as storeIsListening,
+  setListening as storeSetListening,
+} from "./store";
 import type {
   Adapter,
   HttpMethod,
-  ListenOptions, // NOTE: this must now only include { onUnhandledRequest?: ... }
+  ListenOptions,
   Path,
   TryHandleResult,
 } from "./types";
@@ -17,7 +27,7 @@ import { compilePattern, matchPattern, tryJson } from "./utils";
 // and an adapter system (fetch/axios/custom) so the same handlers work across clients.
 
 // -------------------------
-// Internal state
+// Internal state (module-local; OK to be local since listening/origin are global)
 // -------------------------
 
 type InternalHandler = {
@@ -32,14 +42,8 @@ type InternalHandler = {
   }) => Response | Promise<Response>;
 };
 
-let _originalFetch: typeof globalThis.fetch | null = null;
-const _handlers: InternalHandler[] = [];
-let _fetchAdapterAttached = false;
-
+const _handlers: InternalHandler[] = []; // route stack (last wins)
 const _adapters: Adapter[] = [];
-
-// Tracks whether .listen() has been called at least once in this process.
-let _listening = false;
 
 // -------------------------
 // Helpers (absolute URL support)
@@ -163,15 +167,16 @@ async function tryHandle(req: Request): Promise<TryHandleResult> {
 }
 
 // -------------------------
-// Public server API (singleton)
+// Public server API (singleton façade)
 // -------------------------
 
 export const server = {
   /**
    * Has listen() been called in this process?
+   * (Shared via global store — robust to duplicate module loads.)
    */
   isListening(): boolean {
-    return _listening;
+    return storeIsListening();
   },
 
   /**
@@ -185,10 +190,11 @@ export const server = {
       onUnhandledRequest: options.onUnhandledRequest ?? null,
     });
 
+    // Snapshot the *real* original fetch BEFORE patching (if any)
     const preAttachFetch =
       typeof globalThis.fetch === "function" ? globalThis.fetch : null;
 
-    if (!_fetchAdapterAttached && typeof globalThis.fetch === "function") {
+    if (!isFetchAdapterAttached() && typeof globalThis.fetch === "function") {
       const fetchAdapter = createFetchAdapter();
       fetchAdapter.attach({
         tryHandle,
@@ -201,27 +207,24 @@ export const server = {
         logUnhandled,
       });
       _adapters.push(fetchAdapter);
-      _fetchAdapterAttached = true;
+      setFetchAdapterAttached(true);
     }
 
-    if (!_originalFetch) {
-      _originalFetch = preAttachFetch;
+    // Store original fetch once (for proper restoration on close)
+    if (!getOriginalFetch()) {
+      setOriginalFetch(preAttachFetch);
     }
 
-    _listening = true;
+    storeSetListening(true);
   },
 
   /**
    * Register a route handler. Last registered wins (stack behavior).
    *
    * Throws a DX-friendly error if called before .listen().
-   *
-   * @param method HTTP method to match
-   * @param path Path pattern. Supports `/users/:id`, `/*`, and absolute URLs `https://host/path`
-   * @param fn Handler invoked when the request matches
    */
   use(method: HttpMethod, path: Path, fn: InternalHandler["fn"]) {
-    if (!_listening) {
+    if (!storeIsListening()) {
       throw new Error(
         `${INTERCEPT_LOG_PREFIX} You tried to register a route before intercept.listen(). ` +
           `Call intercept.listen({ onUnhandledRequest: 'error' | 'warn' | 'bypass' }) first ` +
@@ -243,7 +246,8 @@ export const server = {
   },
 
   /**
-   * Remove all registered handlers (but keep configuration and adapters).
+   * Remove all registered handlers (but keep configuration, origin and adapters).
+   * NOTE: This does not flip the "listening" flag.
    */
   resetHandlers() {
     _handlers.length = 0;
@@ -251,6 +255,7 @@ export const server = {
 
   /**
    * Detach all adapters, restore globals (like fetch), and clear handlers + options.
+   * Resets origin & configs, and flips the shared listening flag to false.
    */
   close() {
     // Detach adapters in reverse order
@@ -264,18 +269,19 @@ export const server = {
       }
     }
     _adapters.length = 0;
-    _fetchAdapterAttached = false;
+    setFetchAdapterAttached(false);
 
-    // If fetch was patched, ensure it's restored (fetch adapter already tries to do this)
-    if (_originalFetch) {
-      globalThis.fetch = _originalFetch;
-      _originalFetch = null;
+    // Restore original fetch if we had one
+    const original = getOriginalFetch();
+    if (original) {
+      globalThis.fetch = original;
+      setOriginalFetch(null);
     }
 
     _handlers.length = 0;
     resetActiveOrigin();
     resetConfigs();
-    _listening = false;
+    storeSetListening(false);
   },
 
   /**
