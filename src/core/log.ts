@@ -13,30 +13,43 @@ export type RegisteredHandlerInfo = {
  * Calculate Levenshtein distance between two strings for fuzzy matching.
  */
 function levenshteinDistance(a: string, b: string): number {
-  const matrix: number[][] = [];
+  // Initialize matrix with proper dimensions
+  const matrix: number[][] = Array.from({ length: b.length + 1 }, (_, i) => {
+    const row = new Array<number>(a.length + 1);
+    row[0] = i; // First column initialized
+    return row;
+  });
 
-  for (let i = 0; i <= b.length; i++) {
-    matrix[i] = [i];
-  }
-
+  // Initialize first row
   for (let j = 0; j <= a.length; j++) {
+    // biome-ignore lint/style/noNonNullAssertion: matrix[0] is guaranteed to exist
     matrix[0]![j] = j;
   }
 
+  // Calculate distances
   for (let i = 1; i <= b.length; i++) {
+    // biome-ignore lint/style/noNonNullAssertion: Loop bounds guarantee valid indices
+    const row = matrix[i]!;
+    // biome-ignore lint/style/noNonNullAssertion: Loop bounds guarantee valid indices
+    const prevRow = matrix[i - 1]!;
     for (let j = 1; j <= a.length; j++) {
       if (b.charAt(i - 1) === a.charAt(j - 1)) {
-        matrix[i]![j] = matrix[i - 1]![j - 1]!;
+        // biome-ignore lint/style/noNonNullAssertion: Loop bounds guarantee valid indices
+        row[j] = prevRow[j - 1]!;
       } else {
-        matrix[i]![j] = Math.min(
-          matrix[i - 1]![j - 1]! + 1, // substitution
-          matrix[i]![j - 1]! + 1, // insertion
-          matrix[i - 1]![j]! + 1, // deletion
+        row[j] = Math.min(
+          // biome-ignore lint/style/noNonNullAssertion: Loop bounds guarantee valid indices
+          prevRow[j - 1]! + 1, // substitution
+          // biome-ignore lint/style/noNonNullAssertion: Loop bounds guarantee valid indices
+          row[j - 1]! + 1, // insertion
+          // biome-ignore lint/style/noNonNullAssertion: Loop bounds guarantee valid indices
+          prevRow[j]! + 1, // deletion
         );
       }
     }
   }
 
+  // biome-ignore lint/style/noNonNullAssertion: Matrix is fully initialized
   return matrix[b.length]![a.length]!;
 }
 

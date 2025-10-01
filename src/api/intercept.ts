@@ -305,8 +305,7 @@ function addInterceptFor(method: HttpMethod) {
  */
 function isTestEnvironment(): boolean {
   return !!(
-    typeof process !== "undefined" &&
-    process.env &&
+    process?.env &&
     (process.env.VITEST ||
       process.env.JEST_WORKER_ID ||
       process.env.NODE_ENV === "test")

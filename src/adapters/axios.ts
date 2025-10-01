@@ -142,7 +142,7 @@ export function createAxiosAdapter(instance: AxiosLikeInstance): Adapter {
    * - otherwise -> arrayBuffer()
    */
   async function responseToAxios(
-    config: MinimalAxiosConfig | any,
+    config: MinimalAxiosConfig | unknown,
     res: Response,
   ): Promise<MinimalAxiosResponse> {
     const ct = res.headers.get("content-type") || "";
@@ -233,8 +233,8 @@ export function createAxiosAdapter(instance: AxiosLikeInstance): Adapter {
       const anyInst = instance as CompatibleAxiosInstance;
       originalAdapter = anyInst.defaults.adapter ?? null;
 
-      anyInst.defaults.adapter = async (config: any) => {
-        // NB: `config` is `any` here to support both real axios and stub.
+      anyInst.defaults.adapter = async (config: unknown) => {
+        // NB: `config` is `unknown` here to support both real axios and stub.
         const req = axiosConfigToRequest(config as MinimalAxiosConfig);
 
         const result = await core.tryHandle(req);

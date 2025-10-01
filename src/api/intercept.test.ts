@@ -568,7 +568,7 @@ describe("Features", () => {
       setup.reset();
 
       // After reset, handler is gone, should bypass
-      const res = await fetch("https://api.test/test");
+      await fetch("https://api.test/test");
       expect(original).toHaveBeenCalled();
 
       setup.close();
