@@ -1,6 +1,6 @@
-# @klogt/intercept
-
 <div align="center">
+
+# @klogt/intercept
 
 **Stop writing mocks. Start declaring routes.**
 
