@@ -7,6 +7,7 @@ import type {
   ListenOptions,
   Path,
 } from "../core/types";
+import { getDefaultOnUnhandledRequest } from "../core/utils";
 import { HttpResponse } from "../http/response";
 
 /**
@@ -298,27 +299,6 @@ function addInterceptFor(method: HttpMethod) {
       },
     };
   };
-}
-
-/**
- * Detect if we're running in a test environment.
- */
-function isTestEnvironment(): boolean {
-  return !!(
-    process?.env &&
-    (process.env.VITEST ||
-      process.env.JEST_WORKER_ID ||
-      process.env.NODE_ENV === "test")
-  );
-}
-
-/**
- * Get the default onUnhandledRequest strategy based on environment.
- * - In test environments: 'error' (strict)
- * - Otherwise: 'warn' (permissive)
- */
-function getDefaultOnUnhandledRequest(): "error" | "warn" {
-  return isTestEnvironment() ? "error" : "warn";
 }
 
 /**

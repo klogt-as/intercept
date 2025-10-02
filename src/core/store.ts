@@ -3,7 +3,7 @@ import type {
   ListenOptions,
   OnUnhandledRequestStrategy,
 } from "./types";
-import { validateOrigin } from "./utils";
+import { getDefaultOnUnhandledRequest, validateOrigin } from "./utils";
 
 /**
  * Configuration options that must be initialized before use.
@@ -37,7 +37,7 @@ const STORE_KEY = Symbol.for("@klogt/intercept.store");
 // Initial state
 const initialState: Store = {
   config: {
-    onUnhandledRequest: "error",
+    onUnhandledRequest: getDefaultOnUnhandledRequest(),
   },
   listening: false,
   origin: null,

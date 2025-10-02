@@ -2,7 +2,72 @@ import { INTERCEPT_LOG_PREFIX } from "./constants";
 import type { OnUnhandledRequestStrategy } from "./types";
 
 // -------------------------
-// Utilities
+// Environment Detection
+// -------------------------
+
+/**
+ * Detect if we're running in a test environment.
+ */
+function isTestEnvironment(): boolean {
+  return !!(
+    process?.env &&
+    (process.env.VITEST ||
+      process.env.JEST_WORKER_ID ||
+      process.env.NODE_ENV === "test")
+  );
+}
+
+/**
+ * Get the default onUnhandledRequest strategy based on environment.
+ * - In test environments: 'error' (strict)
+ * - Otherwise: 'warn' (permissive)
+ */
+export function getDefaultOnUnhandledRequest(): "error" | "warn" {
+  return isTestEnvironment() ? "error" : "warn";
+}
+
+// -------------------------
+// URL Utilities
+// -------------------------
+
+/**
+ * Check if a URL string is absolute (starts with http:// or https://).
+ */
+export function isAbsoluteUrl(input: string): boolean {
+  return /^https?:\/\//i.test(input.trim());
+}
+
+/**
+ * Normalize a URL string to a stable key for matching.
+ * - Lowercases protocol and host (RFC: case-insensitive)
+ * - Preserves pathname, search, and hash as serialized by URL
+ */
+export function normalizeAbsoluteUrl(input: string): string {
+  const u = new URL(input);
+  const protocol = u.protocol.toLowerCase();
+  const host = u.host.toLowerCase();
+  return `${protocol}//${host}${u.pathname}${u.search}${u.hash}`;
+}
+
+/**
+ * Build a URL for an incoming request:
+ * - Use the request URL as-is if it's absolute
+ * - Otherwise resolve it against the provided origin
+ * - If neither applies, throw with clear DX message
+ */
+export function toRequestUrl(reqUrl: string, origin: string | null): URL {
+  if (isAbsoluteUrl(reqUrl)) return new URL(reqUrl);
+
+  if (origin) return new URL(reqUrl, origin);
+
+  throw new Error(
+    `${INTERCEPT_LOG_PREFIX} Received a relative request URL "${reqUrl}" but no intercept.origin(...) is set for this test. ` +
+      `Call intercept.origin("https://api.example.com") in beforeAll/beforeEach or use an absolute URL.`,
+  );
+}
+
+// -------------------------
+// Request/Response Utilities
 // -------------------------
 
 export const headersToObject = (h: Headers) => Object.fromEntries(h.entries());
