@@ -1,12 +1,15 @@
-import type { ListenOptions, OnUnhandledRequestStrategy } from "./types";
+import type {
+  Adapter,
+  ListenOptions,
+  OnUnhandledRequestStrategy,
+} from "./types";
 import { validateOrigin } from "./utils";
 
 /**
  * Configuration options that must be initialized before use.
- * All properties start as null until listen() is called.
  */
 type StoreConfig = {
-  onUnhandledRequest: OnUnhandledRequestStrategy | null;
+  onUnhandledRequest: OnUnhandledRequestStrategy;
 };
 
 /**
@@ -24,6 +27,8 @@ type Store = {
   originalFetch: typeof globalThis.fetch | null;
   /** Whether the fetch adapter has been attached */
   fetchAdapterAttached: boolean;
+  /** Custom adapters that have been attached (beyond fetch) */
+  customAdapters: Adapter[];
 };
 
 // Unique global symbol for cross-instance compatibility
@@ -32,12 +37,13 @@ const STORE_KEY = Symbol.for("@klogt/intercept.store");
 // Initial state
 const initialState: Store = {
   config: {
-    onUnhandledRequest: null,
+    onUnhandledRequest: "error",
   },
   listening: false,
   origin: null,
   originalFetch: null,
   fetchAdapterAttached: false,
+  customAdapters: [],
 };
 
 // Create or retrieve the shared store from globalThis
@@ -152,4 +158,29 @@ export function isFetchAdapterAttached(): boolean {
  */
 export function setFetchAdapterAttached(value: boolean): void {
   store.fetchAdapterAttached = value;
+}
+
+/* ---------------------------------------------
+ * Custom Adapters Management
+ * --------------------------------------------*/
+
+/**
+ * Get the list of custom adapters (non-fetch adapters).
+ */
+// export function getCustomAdapters(): Adapter[] {
+//   return store.customAdapters;
+// }
+
+/**
+ * Add a custom adapter to the store.
+ */
+export function addCustomAdapter(adapter: Adapter): void {
+  store.customAdapters.push(adapter);
+}
+
+/**
+ * Clear all custom adapters from the store.
+ */
+export function clearCustomAdapters(): void {
+  store.customAdapters.length = 0;
 }

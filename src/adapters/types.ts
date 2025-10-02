@@ -79,3 +79,31 @@ export type AxiosLikeInstance =
   | CompatibleAxiosInstance
   // @ts-ignore: allow missing axios types
   | import("axios").AxiosInstance;
+
+/**
+ * Type guard to check if a value is an axios-like instance.
+ * Checks for the minimal structure needed for our adapter.
+ */
+export function isAxiosLikeInstance(
+  value: unknown,
+): value is AxiosLikeInstance {
+  if (value == null || typeof value !== "object") return false;
+
+  const candidate = value as Record<string, unknown>;
+
+  // Must have a defaults object
+  if (
+    !candidate.defaults ||
+    typeof candidate.defaults !== "object" ||
+    candidate.defaults === null
+  ) {
+    return false;
+  }
+
+  // Must have a request method
+  if (typeof candidate.request !== "function") {
+    return false;
+  }
+
+  return true;
+}

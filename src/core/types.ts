@@ -51,6 +51,8 @@ export type ListenOptions = {
   onUnhandledRequest?: OnUnhandledRequestStrategy;
   /** Optional origin to set for relative paths (e.g., "https://api.example.com"). Can be updated later with .origin(). */
   origin?: string;
+  /** Optional axios-like instance to attach as an adapter. */
+  adapter?: unknown; // Will be type-narrowed at runtime
 };
 
 // Discriminated union for core dispatch:

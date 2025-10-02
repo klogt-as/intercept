@@ -620,22 +620,25 @@ intercept.listen({ onUnhandledRequest: "error" });
 
 ## Axios adapter (optional)
 
-`@klogt/intercept` can intercept both `fetch` **and** a specific Axios instance you choose to attach.
+`@klogt/intercept` can intercept both `fetch` **and** Axios. Simply pass your axios instance to `intercept.listen()`:
 
 ```ts
 import axios from "axios";
-import { createAxiosAdapter } from "@klogt/intercept/axios";
 
 const apiClient = axios.create({
   baseURL: "https://api.example.com"
 });
 
-// In setupTests.ts after intercept.listen()
-const axiosAdapter = createAxiosAdapter(apiClient);
-// Note: The server object is not exposed, but adapters can be managed through intercept
+// In setupTests.ts
+intercept.listen({
+  onUnhandledRequest: 'error',
+  adapter: apiClient  // Automatically wrapped and attached
+});
 ```
 
 **No runtime axios dependency**: the adapter's types reference `axios` conditionally so your library/app doesn't pull axios unless you install it yourself.
+
+**How it works**: When you pass an axios instance to the `adapter` option, intercept automatically wraps it with an internal adapter that makes your axios requests go through the same route handlers as fetch requests.
 
 ---
 

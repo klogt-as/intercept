@@ -8,8 +8,6 @@ import {
   vi,
 } from "vitest";
 import { intercept } from "../api/intercept";
-import { server } from "../core/server";
-import { createAxiosAdapter } from "./axios";
 import type {
   AxiosAdapterFn,
   MinimalAxiosConfig,
@@ -73,11 +71,12 @@ describe("axios adapter + intercept", () => {
   it("resolve(): default status per method and mapping to AxiosResponse", async () => {
     const { axios } = createAxiosStub();
     stubOriginalFetchReturning("should-not-be-called");
-    server.listen({ onUnhandledRequest: "error" });
-    server.attachAdapter(createAxiosAdapter(axios));
 
-    // Relative handlers require an active origin matching the request origin:
-    intercept.origin("http://api.test");
+    intercept.listen({
+      onUnhandledRequest: "error",
+      origin: "http://api.test",
+      adapter: axios,
+    });
 
     // GET -> 200
     intercept.get("/todos").resolve([{ id: 1 }]);
@@ -100,10 +99,12 @@ describe("axios adapter + intercept", () => {
   it("reject(): 404 + custom body/headers via intercept", async () => {
     const { axios } = createAxiosStub();
     stubOriginalFetchReturning("should-not-be-called");
-    server.listen({ onUnhandledRequest: "error" });
-    server.attachAdapter(createAxiosAdapter(axios));
 
-    intercept.origin("http://api.test");
+    intercept.listen({
+      onUnhandledRequest: "error",
+      origin: "http://api.test",
+      adapter: axios,
+    });
 
     intercept.get("/users").reject({
       status: 404,
@@ -120,10 +121,12 @@ describe("axios adapter + intercept", () => {
   it("handle(): params + JSON body works (201)", async () => {
     const { axios } = createAxiosStub();
     stubOriginalFetchReturning("should-not-be-called");
-    server.listen({ onUnhandledRequest: "error" });
-    server.attachAdapter(createAxiosAdapter(axios));
 
-    intercept.origin("http://api.test");
+    intercept.listen({
+      onUnhandledRequest: "error",
+      origin: "http://api.test",
+      adapter: axios,
+    });
 
     intercept.post("/users/:id").handle(async ({ params, body }) => {
       return new Response(
@@ -149,8 +152,10 @@ describe("axios adapter + intercept", () => {
     // 204 might yield empty body, use 200 in passthrough to read text if needed
     stubOriginalFetchReturning("OK", { status: 200 });
 
-    server.listen({ onUnhandledRequest: "warn" });
-    server.attachAdapter(createAxiosAdapter(axios));
+    intercept.listen({
+      onUnhandledRequest: "warn",
+      adapter: axios,
+    });
 
     const res = await axios.request({ url: "/no-handler", method: "get" });
     expect(res.status).toBe(299); // from original axios adapter
@@ -164,8 +169,10 @@ describe("axios adapter + intercept", () => {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     stubOriginalFetchReturning("OK", { status: 200 });
 
-    server.listen({ onUnhandledRequest: "bypass" });
-    server.attachAdapter(createAxiosAdapter(axios));
+    intercept.listen({
+      onUnhandledRequest: "bypass",
+      adapter: axios,
+    });
 
     const res = await axios.request({ url: "/no-handler", method: "get" });
     expect(res.status).toBe(299);
@@ -181,8 +188,10 @@ describe("axios adapter + intercept", () => {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    server.listen({ onUnhandledRequest: "error" });
-    server.attachAdapter(createAxiosAdapter(axios));
+    intercept.listen({
+      onUnhandledRequest: "error",
+      adapter: axios,
+    });
 
     await expect(
       axios.request({ url: "/blocked", method: "post", data: { x: 1 } }),
@@ -198,10 +207,12 @@ describe("axios adapter + intercept", () => {
   it("JSON serialization when data is not BodyInit + automatic content-type", async () => {
     const { axios } = createAxiosStub();
     stubOriginalFetchReturning("should-not-be-called");
-    server.listen({ onUnhandledRequest: "error" });
-    server.attachAdapter(createAxiosAdapter(axios));
 
-    intercept.origin("http://api.test");
+    intercept.listen({
+      onUnhandledRequest: "error",
+      origin: "http://api.test",
+      adapter: axios,
+    });
 
     // Echo endpoint via intercept to verify actual body and header
     intercept.post("/echo").handle(async ({ body, request }) => {
@@ -229,11 +240,11 @@ describe("axios adapter + intercept", () => {
     axios.defaults.baseURL = "http://api.test/prefix/api";
     stubOriginalFetchReturning("should-not-be-called");
 
-    server.listen({ onUnhandledRequest: "error" });
-    server.attachAdapter(createAxiosAdapter(axios));
-
-    // origin må matche hosten vi ender opp med
-    intercept.origin("http://api.test");
+    intercept.listen({
+      onUnhandledRequest: "error",
+      origin: "http://api.test",
+      adapter: axios,
+    });
 
     // Viktig: siden core matcher hele pathname under origin, må pattern inkludere prefixet
     intercept.get("/prefix/api/users/:id").handle(({ params }) => {
@@ -246,23 +257,6 @@ describe("axios adapter + intercept", () => {
     const res = await axios.request({ url: "/users/123", method: "get" });
     expect(res.status).toBe(200);
     expect(res.data).toEqual({ id: "123", ok: true });
-  });
-
-  it("detachAdapter() reverts to original adapter", async () => {
-    const { axios, originalAdapter } = createAxiosStub();
-    stubOriginalFetchReturning("OK", { status: 200 });
-
-    server.listen({ onUnhandledRequest: "warn" });
-    const ax = createAxiosAdapter(axios);
-    server.attachAdapter(ax);
-
-    expect(axios.defaults.adapter).not.toBe(originalAdapter);
-
-    server.detachAdapter(ax);
-    expect(axios.defaults.adapter).toBe(originalAdapter);
-
-    const res = await axios.request({ url: "/still-works", method: "get" });
-    expect(res.status).toBe(299); // original adapter response
   });
 
   /** -----------------------------
@@ -289,8 +283,10 @@ describe("axios adapter + intercept", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     stubOriginalFetchReturning("OK", { status: 200 });
 
-    server.listen({ onUnhandledRequest: "warn" });
-    server.attachAdapter(createAxiosAdapter(axios));
+    intercept.listen({
+      onUnhandledRequest: "warn",
+      adapter: axios,
+    });
 
     await expect(
       axios.request({ url: "/no-handler", method: "get" }),
@@ -308,8 +304,10 @@ describe("axios adapter + intercept", () => {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     stubOriginalFetchReturning("OK", { status: 200 });
 
-    server.listen({ onUnhandledRequest: "bypass" });
-    server.attachAdapter(createAxiosAdapter(axios));
+    intercept.listen({
+      onUnhandledRequest: "bypass",
+      adapter: axios,
+    });
 
     await expect(
       axios.request({ url: "/no-handler", method: "get" }),
@@ -325,10 +323,12 @@ describe("axios adapter + intercept", () => {
   it("permissive headers: arrays, numbers, booleans, Date, objects are normalized", async () => {
     const { axios } = createAxiosStub();
     stubOriginalFetchReturning("should-not-be-called");
-    server.listen({ onUnhandledRequest: "error" });
-    server.attachAdapter(createAxiosAdapter(axios));
 
-    intercept.origin("http://api.test");
+    intercept.listen({
+      onUnhandledRequest: "error",
+      origin: "http://api.test",
+      adapter: axios,
+    });
 
     intercept.post("/headers-echo").handle(async ({ request }) => {
       const entries = Object.fromEntries(request.headers.entries());
@@ -368,10 +368,12 @@ describe("axios adapter + intercept", () => {
   it("responseToAxios parses vendor JSON, text/* and binary correctly", async () => {
     const { axios } = createAxiosStub();
     stubOriginalFetchReturning("should-not-be-called");
-    server.listen({ onUnhandledRequest: "error" });
-    server.attachAdapter(createAxiosAdapter(axios));
 
-    intercept.origin("http://api.test");
+    intercept.listen({
+      onUnhandledRequest: "error",
+      origin: "http://api.test",
+      adapter: axios,
+    });
 
     // vendor JSON
     intercept.get("/vjson").handle(async () => {
@@ -414,10 +416,12 @@ describe("axios adapter + intercept", () => {
   it("GET/HEAD should not send a body nor auto-set content-type", async () => {
     const { axios } = createAxiosStub();
     stubOriginalFetchReturning("should-not-be-called");
-    server.listen({ onUnhandledRequest: "error" });
-    server.attachAdapter(createAxiosAdapter(axios));
 
-    intercept.origin("http://api.test");
+    intercept.listen({
+      onUnhandledRequest: "error",
+      origin: "http://api.test",
+      adapter: axios,
+    });
 
     intercept.get("/no-body").handle(async ({ request }) => {
       const ctype = request.headers.get("content-type");
@@ -442,10 +446,12 @@ describe("axios adapter + intercept", () => {
   it("BodyInit detection: URLSearchParams should be sent as raw body", async () => {
     const { axios } = createAxiosStub();
     stubOriginalFetchReturning("should-not-be-called");
-    server.listen({ onUnhandledRequest: "error" });
-    server.attachAdapter(createAxiosAdapter(axios));
 
-    intercept.origin("http://api.test");
+    intercept.listen({
+      onUnhandledRequest: "error",
+      origin: "http://api.test",
+      adapter: axios,
+    });
 
     intercept.post("/form").handle(async ({ request }) => {
       const text = await request.text();
@@ -476,11 +482,12 @@ describe("axios adapter + intercept", () => {
     const { axios } = createAxiosStub();
     stubOriginalFetchReturning("should-not-be-called");
 
-    server.listen({ onUnhandledRequest: "error" });
-    server.attachAdapter(createAxiosAdapter(axios));
+    intercept.listen({
+      onUnhandledRequest: "error",
+      origin: "http://api.test",
+      adapter: axios,
+    });
 
-    // Route lives under api.test
-    intercept.origin("http://api.test");
     intercept.get("/ping").resolve({ ok: true });
 
     // Case 1: instance default points elsewhere; config.baseURL correct → must win

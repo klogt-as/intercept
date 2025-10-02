@@ -350,6 +350,14 @@ export const intercept = {
    * });
    *
    * @example
+   * // With axios adapter
+   * const apiClient = axios.create({ baseURL: 'https://api.example.com' });
+   * intercept.listen({
+   *   adapter: apiClient,
+   *   onUnhandledRequest: 'error'
+   * });
+   *
+   * @example
    * // Auto-detect based on environment (error in tests, warn otherwise)
    * intercept.listen({});
    */
@@ -357,6 +365,7 @@ export const intercept = {
     server.listen({
       onUnhandledRequest:
         options.onUnhandledRequest ?? getDefaultOnUnhandledRequest(),
+      adapter: options.adapter,
     });
     if (options.origin) {
       setOrigin(options.origin);

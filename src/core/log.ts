@@ -4,7 +4,7 @@ import type { HttpMethod, Path } from "./types";
 /**
  * Information about a registered handler for error messages.
  */
-export type RegisteredHandlerInfo = {
+type RegisteredHandlerInfo = {
   method: HttpMethod;
   path: Path;
 };

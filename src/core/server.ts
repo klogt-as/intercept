@@ -1,7 +1,11 @@
+import { createAxiosAdapter } from "../adapters/axios";
 import { createFetchAdapter } from "../adapters/fetch";
+import { isAxiosLikeInstance } from "../adapters/types";
 import { INTERCEPT_LOG_PREFIX } from "./constants";
 import { logUnhandled } from "./log";
 import {
+  addCustomAdapter,
+  clearCustomAdapters,
   getConfig,
   getOrigin,
   getOriginalFetch,
@@ -196,7 +200,7 @@ export const server = {
   /**
    * Start (or update) the server configuration and attach default adapters.
    *
-   * Only supports { onUnhandledRequest }.
+   * Supports { onUnhandledRequest, adapter }.
    * If called multiple times, options are merged and adapters remain attached.
    */
   listen(options: ListenOptions) {
@@ -210,6 +214,7 @@ export const server = {
     const preAttachFetch =
       typeof globalThis.fetch === "function" ? globalThis.fetch : null;
 
+    // Attach fetch adapter (default)
     if (!isFetchAdapterAttached() && typeof globalThis.fetch === "function") {
       const fetchAdapter = createFetchAdapter();
       fetchAdapter.attach({
@@ -230,6 +235,26 @@ export const server = {
     // Store original fetch once (for proper restoration on close)
     if (!getOriginalFetch()) {
       setOriginalFetch(preAttachFetch);
+    }
+
+    // Attach custom adapter if provided (e.g., axios instance)
+    if (options.adapter) {
+      if (isAxiosLikeInstance(options.adapter)) {
+        const axiosAdapter = createAxiosAdapter(options.adapter);
+        axiosAdapter.attach({
+          tryHandle,
+          getOptions: () => {
+            const config = getConfig();
+            return {
+              onUnhandledRequest: config.onUnhandledRequest ?? undefined,
+            };
+          },
+          getRegisteredHandlers: getRegisteredHandlersInfo,
+          logUnhandled,
+        });
+        _adapters.push(axiosAdapter);
+        addCustomAdapter(axiosAdapter);
+      }
     }
 
     storeSetListening(true);
@@ -287,6 +312,7 @@ export const server = {
     }
     _adapters.length = 0;
     setFetchAdapterAttached(false);
+    clearCustomAdapters();
 
     // Restore original fetch if we had one
     const original = getOriginalFetch();
@@ -299,42 +325,6 @@ export const server = {
     resetOrigin();
     resetConfig();
     storeSetListening(false);
-  },
-
-  /**
-   * Attach a custom adapter (or one of the helpers like `createAxiosAdapter`).
-   *
-   * @example
-   *   const instance = axios.create({ baseURL: 'http://localhost' });
-   *   server.attachAdapter(createAxiosAdapter(instance));
-   */
-  attachAdapter(adapter: Adapter) {
-    adapter.attach({
-      tryHandle,
-      getOptions: () => {
-        const config = getConfig();
-        return {
-          onUnhandledRequest: config.onUnhandledRequest ?? undefined,
-        };
-      },
-      getRegisteredHandlers: getRegisteredHandlersInfo,
-      logUnhandled,
-    });
-    _adapters.push(adapter);
-  },
-
-  /**
-   * Detach (and remove) a previously attached adapter instance.
-   */
-  detachAdapter(adapter: Adapter) {
-    const i = _adapters.indexOf(adapter);
-    if (i >= 0) {
-      try {
-        adapter.detach();
-      } finally {
-        _adapters.splice(i, 1);
-      }
-    }
   },
 
   /**

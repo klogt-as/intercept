@@ -67,31 +67,6 @@ export function matchPattern(
   return params;
 }
 
-/**
- * Ensures baseUrl has no trailing slash.
- * Throws a clear DX error if invalid.
- */
-export function validateBaseUrl(baseUrl: string): string {
-  if (typeof baseUrl !== "string" || baseUrl.trim() === "") {
-    throw new Error(
-      `${INTERCEPT_LOG_PREFIX} "baseUrl" must be a non-empty string, but got: ${String(
-        baseUrl,
-      )}`,
-    );
-  }
-
-  if (baseUrl.endsWith("/")) {
-    throw new Error(
-      `${INTERCEPT_LOG_PREFIX} Invalid "baseUrl": "${baseUrl}"\n\n` +
-        `→ Remove the trailing slash. Example:\n` +
-        `  ❌ server.listen({ baseUrl: "${baseUrl}" })\n` +
-        `  ✅ server.listen({ baseUrl: "${baseUrl.replace(/\/+$/, "")}" })\n`,
-    );
-  }
-
-  return baseUrl;
-}
-
 export function resolveStrategy(
   opt: OnUnhandledRequestStrategy | undefined,
   args: { request: Request; url: URL },
