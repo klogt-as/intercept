@@ -22,6 +22,7 @@ export type MinimalAxiosConfig = {
   method?: string;
   headers?: MinimalAxiosHeaders;
   data?: unknown;
+  params?: Record<string, unknown>;
 };
 
 export type MinimalAxiosResponse<T = unknown> = {

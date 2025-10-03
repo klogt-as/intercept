@@ -94,16 +94,35 @@ function buildHeadersFromAxiosHeaders(
 
 /**
  * Construct a minimal Axios-like error with a synthetic response.
+ * Includes all properties that axios expects for proper error handling.
  */
 function makeAxiosError(
   message: string,
   config: MinimalAxiosConfig,
   response: MinimalAxiosResponse,
+  code?: string,
 ): MinimalAxiosError {
-  const err: MinimalAxiosError = Object.assign(new Error(message), {
+  const error = new Error(message);
+  const err: MinimalAxiosError = Object.assign(error, {
     isAxiosError: true as const,
     response,
     config,
+    code: code || "ERR_BAD_RESPONSE",
+    request: null,
+    toJSON(): Record<string, unknown> {
+      return {
+        message: error.message,
+        name: error.name,
+        code: code || "ERR_BAD_RESPONSE",
+        config,
+        response: {
+          status: response.status,
+          statusText: response.statusText,
+          headers: response.headers,
+          data: response.data,
+        },
+      };
+    },
   });
   return err;
 }
@@ -178,6 +197,7 @@ export function createAxiosAdapter(instance: AxiosLikeInstance): Adapter {
    * Respects (axios semantics):
    * - config.baseURL (highest precedence)
    * - instance.defaults.baseURL (next)
+   * - config.params are serialized and merged with URL query string
    * If none provided:
    * - keep `config.url` as-is (relative like "/v1/x" allowed) and let the core
    *   resolve against intercept.origin(...).
@@ -203,6 +223,27 @@ export function createAxiosAdapter(instance: AxiosLikeInstance): Adapter {
         // Last resort: mark as "relative" via sentinel origin so core can still reason about it.
         fullUrl = new URL(fullUrl, REL_BASE).toString();
       }
+    }
+
+    // Handle axios params: serialize and merge with existing query string
+    if (config.params && typeof config.params === "object") {
+      const url = new URL(fullUrl, REL_BASE);
+      const params = config.params as Record<string, unknown>;
+
+      for (const [key, value] of Object.entries(params)) {
+        if (value != null) {
+          // Axios serializes arrays by repeating the key
+          if (Array.isArray(value)) {
+            for (const item of value) {
+              url.searchParams.append(key, String(item));
+            }
+          } else {
+            url.searchParams.append(key, String(value));
+          }
+        }
+      }
+
+      fullUrl = url.toString();
     }
 
     const method = String(config.method || "get").toUpperCase();
