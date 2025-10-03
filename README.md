@@ -36,8 +36,8 @@ intercept.get("/users").resolve([{ id: 1, name: "Ada" }]);
 ### Built for Modern JavaScript
 
 ✨ **Native Node 20+ `fetch`** — no polyfills, no patches, just works  
-🎯 **Zero dependencies** — only 15kb, installs in milliseconds  
-🔧 **Works with your stack** — Vitest, Jest, React Testing Library, TanStack Query  
+🎯 **Zero dependencies** — only 2.6kb gzipped, installs in milliseconds  
+🔧 **Works with your stack** — Vitest, Jest, React Testing Library, TanStack Query
 🚀 **Millisecond setup** — one file, three lines, done  
 📦 **TypeScript-first** — full type inference, no `any` in sight  
 ⚡ **Lightning fast** — tests run at native speed
