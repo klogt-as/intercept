@@ -1,6 +1,6 @@
 {
   "name": "@klogt/intercept",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "The lightweight HTTP interception library built for modern Node.js testing. MSW-inspired simplicity meets native `fetch` performance.",
   "type": "module",
   "license": "MIT",
