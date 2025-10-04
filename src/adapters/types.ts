@@ -69,6 +69,22 @@ export interface CompatibleAxiosInstance {
     adapter?: AnyAxiosAdapter | null;
     baseURL?: string;
   };
+  interceptors: {
+    request: {
+      use: (
+        onFulfilled: (config: any) => any,
+        onRejected?: (error: any) => any,
+      ) => number;
+      eject: (id: number) => void;
+    };
+    response: {
+      use: (
+        onFulfilled: (response: any) => any,
+        onRejected?: (error: any) => any,
+      ) => number;
+      eject: (id: number) => void;
+    };
+  };
 }
 
 /**
@@ -88,7 +104,13 @@ export type AxiosLikeInstance =
 export function isAxiosLikeInstance(
   value: unknown,
 ): value is AxiosLikeInstance {
-  if (value == null || typeof value !== "object") return false;
+  // Axios instances are functions with properties, so accept both 'object' and 'function'
+  if (
+    value == null ||
+    (typeof value !== "object" && typeof value !== "function")
+  ) {
+    return false;
+  }
 
   const candidate = value as Record<string, unknown>;
 

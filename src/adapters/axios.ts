@@ -3,7 +3,7 @@ import type { Adapter, CoreForAdapter } from "../core/types";
 import { headersToObject, resolveStrategy } from "../core/utils";
 import { HttpResponse } from "../http/response";
 import type {
-  AnyAxiosAdapter,
+  AxiosAdapterFn,
   AxiosLikeInstance,
   CompatibleAxiosInstance,
   MinimalAxiosConfig,
@@ -132,26 +132,23 @@ function makeAxiosError(
 // ------------------------------------------------------------
 
 /**
- * Axios adapter: wraps an axios instance's low-level adapter.
+ * Axios adapter using direct adapter override.
  *
- * Compatible with axios v1. It overrides `instance.defaults.adapter`
- * while attached and restores it on detach.
+ * Works with real axios instances by completely replacing the native transport
+ * adapter (http/https in Node, XHR in browsers) with our own implementation.
  *
- * Behavior mirrors fetch adapter for unhandled requests:
- * - "warn": log and call the original axios adapter
- * - "bypass": call the original axios adapter
+ * Behavior for unhandled requests:
+ * - "warn": log and pass through to original axios transport
+ * - "bypass": silently pass through to original axios transport
  * - "error": reject with a 501-like AxiosError
- *
- * When "warn"/"bypass" is requested but there is no original adapter,
- * this adapter throws an Axios-like error with a synthetic 500 response.
  *
  * Type compatibility:
  * - Accepts both a minimal, stubbed instance (our types) and a real
  *   `axios.AxiosInstance` without adding a runtime dependency on axios.
  */
 export function createAxiosAdapter(instance: AxiosLikeInstance): Adapter {
-  // Loosely-typed original adapter so we can handle both real axios and stub
-  let originalAdapter: AnyAxiosAdapter | null = null;
+  let isAttached = false;
+  let originalAdapter: AxiosAdapterFn | null | undefined = null;
 
   /**
    * Convert a Fetch Response -> AxiosResponse (structure expected by axios).
@@ -268,23 +265,29 @@ export function createAxiosAdapter(instance: AxiosLikeInstance): Adapter {
 
   return {
     attach(core: CoreForAdapter) {
-      if (originalAdapter) return;
+      if (isAttached) return;
 
-      // Narrow to a structurally compatible form and store original adapter
+      // Narrow to a structurally compatible form
       const anyInst = instance as CompatibleAxiosInstance;
-      originalAdapter = anyInst.defaults.adapter ?? null;
 
-      anyInst.defaults.adapter = async (config: unknown) => {
-        // NB: `config` is `unknown` here to support both real axios and stub.
-        const req = axiosConfigToRequest(config as MinimalAxiosConfig);
+      // Store the original adapter (it's an array by default: ['xhr', 'http', 'fetch'])
+      originalAdapter = anyInst.defaults.adapter;
 
+      // CRITICAL: Set adapter SYNCHRONOUSLY before any requests are made
+      // Axios caches adapter selection on first request, so we must replace it immediately
+      anyInst.defaults.adapter = async (
+        config: MinimalAxiosConfig,
+      ): Promise<MinimalAxiosResponse> => {
+        // Convert axios config to Request and check if we should mock it
+        const req = axiosConfigToRequest(config);
         const result = await core.tryHandle(req);
+
         if (result.matched) {
+          // We have a mock! Return it directly as an AxiosResponse
           return responseToAxios(config, result.res);
         }
 
-        // Unhandled request
-        // Build a URL object for logging:
+        // No mock found - handle unhandled request strategy
         const urlForLogs = isAbsoluteURL(req.url)
           ? new URL(req.url)
           : new URL(req.url, "http://origin.invalid");
@@ -294,58 +297,92 @@ export function createAxiosAdapter(instance: AxiosLikeInstance): Adapter {
           url: urlForLogs,
         });
 
-        if (strategy === "warn" || strategy === "bypass") {
-          // In both "warn" and "bypass" we prefer delegating to the original adapter if present.
-          if (strategy === "warn") {
-            core.logUnhandled("warn", req, urlForLogs);
-          }
+        if (strategy === "warn") {
+          core.logUnhandled("warn", req, urlForLogs);
+          // Pass through to original adapter if available
           if (originalAdapter) {
             return originalAdapter(config);
           }
-
-          // No original adapter available — throw an Axios-like error with synthetic 500
-          const synthetic = await responseToAxios(
+          // No original adapter - return error
+          const errorResponse = await responseToAxios(
             config,
             HttpResponse.json(
-              { error: "No axios adapter configured for passthrough" },
+              {
+                error: "No original adapter available",
+                message: "Cannot pass through unhandled request",
+              },
               { status: 500 },
             ),
           );
           throw makeAxiosError(
-            "No axios adapter configured",
-            config as MinimalAxiosConfig,
-            synthetic,
+            "No original adapter available (warn mode)",
+            config,
+            errorResponse,
           );
         }
 
-        // strategy === "error" -> reject like axios would on HTTP error
+        if (strategy === "bypass") {
+          // Silently pass through to original adapter if available
+          if (originalAdapter) {
+            return originalAdapter(config);
+          }
+          // No original adapter - return error
+          const errorResponse = await responseToAxios(
+            config,
+            HttpResponse.json(
+              {
+                error: "No original adapter available",
+                message: "Cannot pass through unhandled request",
+              },
+              { status: 500 },
+            ),
+          );
+          throw makeAxiosError(
+            "No original adapter available (bypass mode)",
+            config,
+            errorResponse,
+          );
+        }
+
+        // strategy === "error" - block the request
         core.logUnhandled("error", req, urlForLogs);
-        const res = HttpResponse.json(
-          {
-            error: "Unhandled request",
-            details: {
-              method: req.method,
-              url: urlForLogs.toString(),
-              headers: headersToObject(req.headers),
+        const errorResponse = await responseToAxios(
+          config,
+          HttpResponse.json(
+            {
+              error: "Unhandled request",
+              details: {
+                method: req.method,
+                url: urlForLogs.toString(),
+                headers: headersToObject(req.headers),
+              },
             },
-          },
-          { status: 501 },
+            { status: 501 },
+          ),
         );
-        const axiosRes = await responseToAxios(config, res);
 
         throw makeAxiosError(
           "Request blocked by test server (unhandled)",
-          config as MinimalAxiosConfig,
-          axiosRes,
+          config,
+          errorResponse,
         );
       };
+
+      isAttached = true;
     },
+
     detach() {
+      if (!isAttached) return;
+
       const anyInst = instance as CompatibleAxiosInstance;
-      if (originalAdapter !== null) {
+
+      // Restore the original adapter
+      if (originalAdapter !== undefined) {
         anyInst.defaults.adapter = originalAdapter;
         originalAdapter = null;
       }
+
+      isAttached = false;
     },
   };
 }

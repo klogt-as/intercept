@@ -28,7 +28,22 @@ function createAxiosStub() {
     };
   };
 
-  const axios: MinimalAxiosInstance = {
+  const interceptors: Array<{
+    onFulfilled: (config: MinimalAxiosConfig) => MinimalAxiosConfig;
+    onRejected: (error: unknown) => unknown;
+  }> = [];
+
+  const axios: MinimalAxiosInstance & {
+    interceptors: {
+      request: {
+        use: (
+          onFulfilled: (config: MinimalAxiosConfig) => MinimalAxiosConfig,
+          onRejected: (error: unknown) => unknown,
+        ) => number;
+        eject: (id: number) => void;
+      };
+    };
+  } = {
     defaults: {
       adapter: originalAdapter,
       baseURL: "http://api.test", // default base for tests that rely on axios baseURL
@@ -37,6 +52,17 @@ function createAxiosStub() {
       const adapter = axios.defaults.adapter;
       if (!adapter) throw new Error("No adapter configured");
       return adapter(config);
+    },
+    interceptors: {
+      request: {
+        use: (onFulfilled, onRejected) => {
+          interceptors.push({ onFulfilled, onRejected });
+          return interceptors.length - 1;
+        },
+        eject: (id) => {
+          delete interceptors[id];
+        },
+      },
     },
   };
 
