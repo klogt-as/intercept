@@ -720,9 +720,16 @@ Start intercepting. Must be called before defining routes.
 
 ```ts
 intercept.listen({
+  origin?: string;
   onUnhandledRequest?: "warn" | "bypass" | "error" | ((args) => Strategy);
+  adapter?: unknown;
 });
 ```
+
+**Parameters:**
+- `origin`: (optional) Base URL for relative paths. Can also be set later via `.origin()`
+- `onUnhandledRequest`: (optional) Strategy for unhandled requests. Defaults to `'error'` in test environments (Vitest/Jest) and `'warn'` otherwise
+- `adapter`: (optional) Axios instance to intercept (see [Axios adapter section](#axios-adapter-optional))
 
 Returns `intercept` for chaining with `.origin()`.
 
@@ -856,11 +863,18 @@ afterAll(() => {
 Convenience helper that automatically registers lifecycle hooks for minimal boilerplate. Use this when you don't need custom logic in your hooks.
 
 ```ts
-setupIntercept(options: ListenOptions): void;
+setupIntercept(options?: {
+  origin?: string;
+  onUnhandledRequest?: "warn" | "bypass" | "error" | ((args) => Strategy);
+  adapter?: unknown;
+}): void;
 ```
 
 **Parameters:**
-- `options`: Same as `intercept.listen()` - can include `origin` and `onUnhandledRequest`
+- `options`: (optional) Configuration object with the same options as `intercept.listen()`:
+  - `origin`: Base URL for relative paths
+  - `onUnhandledRequest`: Strategy for unhandled requests (default: auto-detected)
+  - `adapter`: Axios instance to intercept
 
 **What it does:**
 - Automatically calls `intercept.listen(options)` in a `beforeAll` hook
