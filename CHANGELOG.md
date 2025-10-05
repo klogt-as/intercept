@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.2] - 2025-05-10
+
+### Added
+- Added automated release workflow for streamlined publishing process
+- Added `docs/RELEASING.md` documentation for release procedures
+- Expanded package.json keywords for better npm discoverability (fetch, axios, intercept, interceptor, mock, mocking, msw, testing, test, vitest, jest, react-testing-library, tanstack-query, react-query, node)
+
+### Changed
+- Updated biome.json to include package.json in auto-formatting scope
+- Moved RELEASING.md documentation to docs folder for better organization
+
 ## [2.0.1] - 2025-05-10
 
 ### Documentation
