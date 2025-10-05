@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.1] - 2025-05-10
+
+### Documentation
+- Improved Quick Start guide structure to better reflect recommended usage patterns:
+  - Inline approach shown first for quick prototyping and testing
+  - `setupIntercept()` positioned as Setup Option 1 (minimal boilerplate)
+  - Added "Alternative: Per-test suite setup" section showing `describe` block usage
+  - Manual setup repositioned as Setup Option 2 (maximum control with custom logic)
+- Enhanced API reference with complete parameter signatures:
+  - Added missing `origin` and `adapter` parameters to `intercept.listen()` documentation
+  - Expanded `setupIntercept()` signature to show all available options (`origin`, `onUnhandledRequest`, `adapter`)
+  - Added detailed parameter descriptions with defaults and cross-references
+
 ## [2.0.0] - 2025-05-10
 
 ### Changed
