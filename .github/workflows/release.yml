@@ -58,6 +58,6 @@ jobs:
           body_path: /tmp/changelog.txt
           draft: false
           prerelease: false
-          name: Release ${{ steps.version.outputs.version }}
+          name: ${{ github.ref_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
