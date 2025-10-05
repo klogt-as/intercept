@@ -156,6 +156,10 @@ export function createAxiosAdapter(instance: AxiosLikeInstance): Adapter {
    * - Treat any content type that *contains* "json" as JSON (e.g. application/hal+json)
    * - text/* -> text()
    * - otherwise -> arrayBuffer()
+   *
+   * Implements axios validateStatus behavior:
+   * - If status is outside 2xx range (or custom validateStatus returns false), throws AxiosError
+   * - Otherwise returns AxiosResponse
    */
   async function responseToAxios(
     config: MinimalAxiosConfig | unknown,
@@ -169,7 +173,7 @@ export function createAxiosAdapter(instance: AxiosLikeInstance): Adapter {
         ? await res.text()
         : await res.arrayBuffer();
 
-    return {
+    const axiosResponse: MinimalAxiosResponse = {
       data,
       status: res.status,
       statusText: res.statusText || String(res.status),
@@ -177,6 +181,36 @@ export function createAxiosAdapter(instance: AxiosLikeInstance): Adapter {
       config: config as MinimalAxiosConfig,
       request: null,
     };
+
+    // Implement axios validateStatus logic
+    // Default: status >= 200 && status < 300
+    const axiosConfig = config as MinimalAxiosConfig;
+    const validateStatus =
+      axiosConfig.validateStatus ||
+      ((status: number) => status >= 200 && status < 300);
+
+    if (!validateStatus(res.status)) {
+      // Status is invalid - throw AxiosError (mimics real axios behavior)
+      // Extract custom error message from response body if available
+      let errorMessage = `Request failed with status code ${res.status}`;
+      if (
+        axiosResponse.data &&
+        typeof axiosResponse.data === "object" &&
+        "message" in axiosResponse.data &&
+        typeof axiosResponse.data.message === "string"
+      ) {
+        errorMessage = axiosResponse.data.message;
+      }
+
+      throw makeAxiosError(
+        errorMessage,
+        axiosConfig,
+        axiosResponse,
+        "ERR_BAD_RESPONSE",
+      );
+    }
+
+    return axiosResponse;
   }
 
   /**
