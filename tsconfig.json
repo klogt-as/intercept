@@ -11,7 +11,7 @@
     "noUncheckedIndexedAccess": true,
 
     "resolveJsonModule": true,
-    "types": ["node"],
+    "types": ["node", "vitest/globals"],
 
     "esModuleInterop": true,
     "isolatedModules": true,

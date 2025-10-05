@@ -141,20 +141,26 @@ No need to install `axios` unless you plan to attach the Axios adapter.
 ### Required setup
 
 `intercept` will **not work** until you start the server in your test environment.  
-The recommended way is to create a shared setup file (e.g. `setupTests.ts`) using the `createSetup()` helper:
+Create a shared setup file (e.g. `setupTests.ts`) to initialize intercept:
 
 ```ts
 // setupTests.ts
-import { createSetup } from "@klogt/intercept";
+import { intercept } from "@klogt/intercept";
 
-const setup = createSetup({
-  origin: 'https://api.example.com',
-  onUnhandledRequest: 'error'
+beforeAll(() => {
+  intercept.listen({
+    origin: 'https://api.example.com',
+    onUnhandledRequest: 'error'
+  });
 });
 
-beforeAll(setup.start);
-afterEach(setup.reset);
-afterAll(setup.close);
+afterEach(() => {
+  intercept.reset();
+});
+
+afterAll(() => {
+  intercept.close();
+});
 ```
 
 **Important**: Configure this file in your `vitest.config.ts`:
@@ -171,6 +177,22 @@ export default defineConfig({
 ```
 
 **Note**: `onUnhandledRequest` defaults to `'error'` in test environments (Vitest/Jest) and `'warn'` otherwise, so you can omit it if the default works for you.
+
+### Alternative: Minimal boilerplate with setupIntercept()
+
+If you don't need custom logic in your lifecycle hooks, you can use the `setupIntercept()` helper for even less boilerplate:
+
+```ts
+// setupTests.ts
+import { setupIntercept } from "@klogt/intercept";
+
+setupIntercept({
+  origin: 'https://api.example.com',
+  onUnhandledRequest: 'error'
+});
+```
+
+This automatically registers `beforeAll`, `afterEach`, and `afterAll` hooks. For more control (custom logging, conditional setup, etc.), use the manual approach shown above.
 
 ### Your first test
 
@@ -739,35 +761,43 @@ afterAll(() => {
 });
 ```
 
-### `createSetup(options)`
+### `setupIntercept(options)`
 
-Create a test setup helper that reduces boilerplate. Returns an object with lifecycle methods:
+Convenience helper that automatically registers lifecycle hooks for minimal boilerplate. Use this when you don't need custom logic in your hooks.
 
 ```ts
-createSetup(options: ListenOptions): {
-  start: () => void;
-  reset: () => void;
-  close: () => void;
-}
+setupIntercept(options: ListenOptions): void;
 ```
 
 **Parameters:**
 - `options`: Same as `intercept.listen()` - can include `origin` and `onUnhandledRequest`
 
+**What it does:**
+- Automatically calls `intercept.listen(options)` in a `beforeAll` hook
+- Automatically calls `intercept.reset()` in an `afterEach` hook
+- Automatically calls `intercept.close()` in an `afterAll` hook
+
 **Example:**
 ```ts
 // setupTests.ts
-import { createSetup } from "@klogt/intercept";
+import { setupIntercept } from "@klogt/intercept";
 
-const setup = createSetup({
+setupIntercept({
   origin: 'https://api.example.com',
   onUnhandledRequest: 'error'
 });
-
-beforeAll(setup.start);
-afterEach(setup.reset);
-afterAll(setup.close);
 ```
+
+**When to use:**
+- You have a single API origin for your entire test suite
+- You don't need custom logic in lifecycle hooks
+- You want minimal boilerplate
+
+**When to use manual setup instead:**
+- You need custom logging or debugging in hooks
+- You need conditional or dynamic setup
+- You need to integrate with other test setup/teardown
+- You need per-test origins
 
 ---
 
