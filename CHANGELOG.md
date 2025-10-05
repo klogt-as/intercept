@@ -7,6 +7,113 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.1] - 2025-05-10
+
+### Documentation
+- Improved Quick Start guide structure to better reflect recommended usage patterns:
+  - Inline approach shown first for quick prototyping and testing
+  - `setupIntercept()` positioned as Setup Option 1 (minimal boilerplate)
+  - Added "Alternative: Per-test suite setup" section showing `describe` block usage
+  - Manual setup repositioned as Setup Option 2 (maximum control with custom logic)
+- Enhanced API reference with complete parameter signatures:
+  - Added missing `origin` and `adapter` parameters to `intercept.listen()` documentation
+  - Expanded `setupIntercept()` signature to show all available options (`origin`, `onUnhandledRequest`, `adapter`)
+  - Added detailed parameter descriptions with defaults and cross-references
+
+## [2.0.0] - 2025-05-10
+
+### Changed
+- **BREAKING**: Renamed `createSetup()` to `setupIntercept()` for better clarity and discoverability
+- **BREAKING**: `setupIntercept()` now automatically registers lifecycle hooks (`beforeAll`, `afterEach`, `afterAll`) instead of returning an object with `start`, `reset`, and `close` methods
+- Updated documentation to show `intercept.listen()` as the primary/recommended approach for maximum flexibility
+- Positioned `setupIntercept()` as a convenience helper for simple cases where custom logic in lifecycle hooks is not needed
+
+### Added
+- Added `vitest/globals` types to tsconfig.json for proper TypeScript support of global test functions
+
+### Migration Guide
+
+If you were using `createSetup()`, you have two options for upgrading:
+
+**Option 1: Use the new `setupIntercept()` (simplest migration)**
+
+```ts
+// Before (1.x)
+import { createSetup } from "@klogt/intercept";
+
+const setup = createSetup({
+  origin: 'https://api.example.com',
+  onUnhandledRequest: 'error'
+});
+
+beforeAll(setup.start);
+afterEach(setup.reset);
+afterAll(setup.close);
+
+// After (2.0.0)
+import { setupIntercept } from "@klogt/intercept";
+
+setupIntercept({
+  origin: 'https://api.example.com',
+  onUnhandledRequest: 'error'
+});
+// That's it! Hooks are registered automatically
+```
+
+**Option 2: Use `intercept.listen()` directly (recommended for more control)**
+
+```ts
+// After (2.0.0) - provides maximum flexibility
+import { intercept } from "@klogt/intercept";
+
+beforeAll(() => {
+  intercept.listen({
+    origin: 'https://api.example.com',
+    onUnhandledRequest: 'error'
+  });
+});
+
+afterEach(() => {
+  intercept.reset();
+});
+
+afterAll(() => {
+  intercept.close();
+});
+```
+
+Use Option 2 when you need:
+- Custom logging or debugging in hooks
+- Conditional or dynamic setup
+- Integration with other test setup/teardown
+- Per-test origins
+
+## [1.0.3] - 2025-05-10
+
+### Fixed
+- Fixed axios adapter not properly extracting custom error messages from `intercept.reject()` responses. Error messages now correctly propagate through AxiosError to React Query and other error handlers.
+
+### Added
+- Added `code`, `request`, and `toJSON` properties to `MinimalAxiosError` type for better axios compatibility
+- Added axios (v1.12.2) as devDependency for compile-time type compatibility verification
+- Added `TYPE_TESTING.md` documentation explaining the type testing strategy and CI integration
+- Added `TYPE_ALIGNMENT.md` documentation explaining type design decisions and maintenance guidelines
+- Added comprehensive JSDoc documentation to all axios adapter types explaining design decisions
+
+### Changed
+- Rewrote `axios-types.test-d.ts` with proper compile-time type assertions using TypeScript's type system
+- Enhanced `MinimalAxiosError` to include all properties that axios error handlers typically check
+- Type compatibility tests now verify core fields, error handling patterns, and real-world usage scenarios
+- Improved type safety by documenting intentional differences from axios types
+
+### Technical Details
+- The `responseToAxios` function now extracts custom error messages from `response.data.message` when available
+- Type tests now use `Extends<>` utility for proper compile-time type compatibility checking
+- Tests verify that MinimalAxiosResponse, MinimalAxiosConfig, and MinimalAxiosError remain compatible with axios types
+- CI integration ensures type compatibility checks run before publishing via `pnpm typecheck`
+- Type tests document intentional differences (e.g., more permissive header types)
+- Type compatibility tests will fail at compile time if types drift from axios, preventing bugs before they reach production
+
 ## [1.0.2] - 2025-04-10
 
 ### Fixed

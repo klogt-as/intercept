@@ -122,7 +122,7 @@ describe("axios adapter + intercept", () => {
     expect(postRes.data).toEqual({ id: 2 });
   });
 
-  it("reject(): 404 + custom body/headers via intercept", async () => {
+  it("reject(): 404 + custom body/headers via intercept (throws AxiosError)", async () => {
     const { axios } = createAxiosStub();
     stubOriginalFetchReturning("should-not-be-called");
 
@@ -138,10 +138,16 @@ describe("axios adapter + intercept", () => {
       headers: { "x-test": "1" },
     });
 
-    const res = await axios.request({ url: "/users", method: "get" });
-    expect(res.status).toBe(404);
-    expect(res.headers["x-test"]).toBe("1");
-    expect(res.data).toEqual({ message: "Not found" });
+    await expect(
+      axios.request({ url: "/users", method: "get" }),
+    ).rejects.toMatchObject({
+      isAxiosError: true,
+      response: {
+        status: 404,
+        headers: { "x-test": "1" },
+        data: { message: "Not found" },
+      },
+    });
   });
 
   it("handle(): params + JSON body works (201)", async () => {
@@ -537,5 +543,129 @@ describe("axios adapter + intercept", () => {
     const r3 = await axios.request({ url: "/ping", method: "get" });
     expect(r3.status).toBe(200);
     expect(r3.data).toEqual({ ok: true });
+  });
+
+  it("reject() works correctly in async contexts like React Query", async () => {
+    const { axios } = createAxiosStub();
+    stubOriginalFetchReturning("should-not-be-called");
+
+    intercept.listen({
+      onUnhandledRequest: "error",
+      origin: "http://api.test",
+      adapter: axios,
+    });
+
+    // Simulate a React Query-style fetch function
+    async function fetchData(): Promise<unknown> {
+      try {
+        const response = await axios.request({
+          url: "/api/v2/pokemon",
+          method: "get",
+        });
+        return response.data;
+      } catch (error) {
+        // React Query expects errors to be thrown and caught
+        let msg = "Failed to fetch";
+        if (
+          error &&
+          typeof error === "object" &&
+          "isAxiosError" in error &&
+          error.isAxiosError
+        ) {
+          const axiosError = error as {
+            response?: { data?: { message?: string } };
+          };
+          if (axiosError.response?.data?.message) {
+            msg = axiosError.response.data.message;
+          }
+        }
+        throw new Error(msg);
+      }
+    }
+
+    // Mock the endpoint to reject with 500
+    intercept.get("/api/v2/pokemon").reject({
+      status: 500,
+      body: { message: "Internal Server Error" },
+    });
+
+    // Verify that the error is thrown and can be caught
+    await expect(fetchData()).rejects.toThrow("Internal Server Error");
+  });
+
+  it("reject() with various status codes throws appropriate errors", async () => {
+    const { axios } = createAxiosStub();
+    stubOriginalFetchReturning("should-not-be-called");
+
+    intercept.listen({
+      onUnhandledRequest: "error",
+      origin: "http://api.test",
+      adapter: axios,
+    });
+
+    // Test 400 Bad Request
+    intercept.get("/bad-request").reject({
+      status: 400,
+      body: { error: "Bad Request" },
+    });
+
+    await expect(
+      axios.request({ url: "/bad-request", method: "get" }),
+    ).rejects.toMatchObject({
+      isAxiosError: true,
+      response: { status: 400, data: { error: "Bad Request" } },
+    });
+
+    // Test 401 Unauthorized
+    intercept.get("/unauthorized").reject({
+      status: 401,
+      body: { error: "Unauthorized" },
+    });
+
+    await expect(
+      axios.request({ url: "/unauthorized", method: "get" }),
+    ).rejects.toMatchObject({
+      isAxiosError: true,
+      response: { status: 401, data: { error: "Unauthorized" } },
+    });
+
+    // Test 500 Internal Server Error
+    intercept.get("/server-error").reject({
+      status: 500,
+      body: { error: "Internal Server Error" },
+    });
+
+    await expect(
+      axios.request({ url: "/server-error", method: "get" }),
+    ).rejects.toMatchObject({
+      isAxiosError: true,
+      response: { status: 500, data: { error: "Internal Server Error" } },
+    });
+  });
+
+  it("validateStatus can be customized to accept error status codes", async () => {
+    const { axios } = createAxiosStub();
+    stubOriginalFetchReturning("should-not-be-called");
+
+    intercept.listen({
+      onUnhandledRequest: "error",
+      origin: "http://api.test",
+      adapter: axios,
+    });
+
+    intercept.get("/error").reject({
+      status: 404,
+      body: { message: "Not found" },
+    });
+
+    // With custom validateStatus that accepts 404
+    const res = await axios.request({
+      url: "/error",
+      method: "get",
+      validateStatus: () => true, // Accept all status codes
+    });
+
+    expect(res.status).toBe(404);
+    expect(res.data).toEqual({ message: "Not found" });
   });
 });

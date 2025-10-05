@@ -409,43 +409,48 @@ export const intercept = {
 };
 
 /**
- * Create a test setup helper that reduces boilerplate in test files.
- * Returns an object with start/reset/close methods for use in test lifecycle hooks.
+ * Automatically configure intercept with lifecycle hooks for minimal boilerplate.
+ * Use this in your setupTests.ts file when you don't need custom logic in hooks.
+ *
+ * This function automatically registers:
+ * - beforeAll: starts intercept with your options
+ * - afterEach: resets all handlers for test isolation
+ * - afterAll: closes intercept and cleans up
+ *
+ * For more control (custom logging, conditional setup, etc.), use intercept.listen()
+ * directly in your lifecycle hooks instead.
  *
  * @example
- * const setup = createSetup({
+ * // setupTests.ts - minimal setup
+ * import { setupIntercept } from "@klogt/intercept";
+ *
+ * setupIntercept({
  *   origin: 'https://api.example.com',
  *   onUnhandledRequest: 'error'
  * });
  *
- * beforeAll(setup.start);
- * afterEach(setup.reset);
- * afterAll(setup.close);
+ * @example
+ * // For custom logic, use intercept directly:
+ * import { intercept } from "@klogt/intercept";
+ *
+ * beforeAll(() => {
+ *   console.log('Starting tests');
+ *   intercept.listen({ origin: 'https://api.example.com' });
+ * });
+ *
+ * afterEach(() => intercept.reset());
+ * afterAll(() => intercept.close());
  */
-export function createSetup(options: ListenOptions = {}) {
-  return {
-    /**
-     * Start intercept with the provided options.
-     * Use in beforeAll() or beforeEach().
-     */
-    start: () => {
-      intercept.listen(options);
-    },
+export function setupIntercept(options: ListenOptions = {}) {
+  beforeAll(() => {
+    intercept.listen(options);
+  });
 
-    /**
-     * Reset all registered handlers.
-     * Use in afterEach() to ensure test isolation.
-     */
-    reset: () => {
-      intercept.reset();
-    },
+  afterEach(() => {
+    intercept.reset();
+  });
 
-    /**
-     * Close intercept and restore all globals.
-     * Use in afterAll() for cleanup.
-     */
-    close: () => {
-      intercept.close();
-    },
-  };
+  afterAll(() => {
+    intercept.close();
+  });
 }

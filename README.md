@@ -58,6 +58,12 @@ intercept.get("/users").resolve([{ id: 1, name: "Ada" }]);
 import { intercept } from "@klogt/intercept";
 
 it("fetches and displays users", async () => {
+  // Start intercepting with your API origin
+  intercept.listen({
+    origin: 'https://api.example.com',
+    onUnhandledRequest: 'error'
+  });
+
   // Declare what the API should return
   intercept.get("/users").resolve([
     { id: 1, name: "Ada Lovelace" },
@@ -138,26 +144,54 @@ No need to install `axios` unless you plan to attach the Axios adapter.
 
 ## Quick start (Vitest)
 
-### Required setup
+### Getting started: Inline approach
 
-`intercept` will **not work** until you start the server in your test environment.  
-The recommended way is to create a shared setup file (e.g. `setupTests.ts`) using the `createSetup()` helper:
+The simplest way to get started is to call `intercept.listen()` directly in your tests:
+
+```ts
+import { intercept } from "@klogt/intercept";
+
+it("fetches users from API", async () => {
+  // Start intercepting with your API origin
+  intercept.listen({
+    origin: 'https://api.example.com',
+    onUnhandledRequest: 'error'
+  });
+
+  // Declare what the API should return
+  intercept.get("/users").resolve([
+    { id: 1, name: "Ada" },
+    { id: 2, name: "Grace" }
+  ]);
+
+  // Your code calls fetch('/users') - it gets the mocked response
+  const res = await fetch('/users');
+  const users = await res.json();
+  
+  expect(users).toHaveLength(2);
+  expect(users[0].name).toBe("Ada");
+});
+```
+
+This works great for quick tests! However, you'll likely want to extract the setup to avoid repetition.
+
+**Note**: `onUnhandledRequest` defaults to `'error'` in test environments (Vitest/Jest) and `'warn'` otherwise, so you can omit it if the default works for you.
+
+### Setup Option 1: Using setupIntercept() helper
+
+For minimal boilerplate, use the `setupIntercept()` helper in a shared setup file:
 
 ```ts
 // setupTests.ts
-import { createSetup } from "@klogt/intercept";
+import { setupIntercept } from "@klogt/intercept";
 
-const setup = createSetup({
+setupIntercept({
   origin: 'https://api.example.com',
   onUnhandledRequest: 'error'
 });
-
-beforeAll(setup.start);
-afterEach(setup.reset);
-afterAll(setup.close);
 ```
 
-**Important**: Configure this file in your `vitest.config.ts`:
+This automatically registers `beforeAll`, `afterEach`, and `afterAll` hooks for you. Then configure this file in your `vitest.config.ts`:
 
 ```ts
 // vitest.config.ts
@@ -170,28 +204,106 @@ export default defineConfig({
 });
 ```
 
-**Note**: `onUnhandledRequest` defaults to `'error'` in test environments (Vitest/Jest) and `'warn'` otherwise, so you can omit it if the default works for you.
-
-### Your first test
-
-Create a test file, e.g. `tests/users.test.ts`:
+Now your tests can be clean and focused:
 
 ```ts
 import { intercept } from "@klogt/intercept";
 
 it("fetches users from API", async () => {
-  // Mock the API response
+  // Just declare routes - setup is handled automatically
   intercept.get("/users").resolve([
     { id: 1, name: "Ada" },
     { id: 2, name: "Grace" }
   ]);
 
-  // Your code calls fetch('/users') - it gets the mocked response
   const res = await fetch('/users');
   const users = await res.json();
   
   expect(users).toHaveLength(2);
-  expect(users[0].name).toBe("Ada");
+});
+```
+
+### Alternative: Per-test suite setup
+
+If you prefer to keep setup within your test files, you can use `describe` blocks with lifecycle hooks:
+
+```ts
+import { intercept } from "@klogt/intercept";
+
+describe("User API", () => {
+  beforeAll(() => {
+    intercept.listen({
+      origin: 'https://api.example.com',
+      onUnhandledRequest: 'error'
+    });
+  });
+
+  afterEach(() => {
+    intercept.reset();
+  });
+
+  afterAll(() => {
+    intercept.close();
+  });
+
+  it("fetches users", async () => {
+    intercept.get("/users").resolve([
+      { id: 1, name: "Ada" },
+      { id: 2, name: "Grace" }
+    ]);
+
+    const res = await fetch('/users');
+    const users = await res.json();
+    
+    expect(users).toHaveLength(2);
+  });
+
+  it("handles errors", async () => {
+    intercept.get("/users").reject({ status: 500 });
+    
+    await expect(fetch('/users')).rejects.toThrow();
+  });
+});
+```
+
+This approach gives you control over the interceptor lifecycle per test suite without needing a shared setup file.
+
+### Setup Option 2: Shared setup file (manual approach)
+
+For maximum control (custom logging, conditional setup, etc.), you can manually manage the lifecycle hooks:
+
+```ts
+// setupTests.ts
+import { intercept } from "@klogt/intercept";
+
+beforeAll(() => {
+  intercept.listen({
+    origin: 'https://api.example.com',
+    onUnhandledRequest: 'error'
+  });
+});
+
+afterEach(() => {
+  intercept.reset();
+});
+
+afterAll(() => {
+  intercept.close();
+});
+```
+
+**Note**: This is what `setupIntercept()` does for you under the hood. Use this manual approach when you need to add custom logic to the lifecycle hooks.
+
+Configure this file in your `vitest.config.ts`:
+
+```ts
+// vitest.config.ts
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  test: {
+    setupFiles: ['./setupTests.ts'],
+  },
 });
 ```
 
@@ -608,9 +720,16 @@ Start intercepting. Must be called before defining routes.
 
 ```ts
 intercept.listen({
+  origin?: string;
   onUnhandledRequest?: "warn" | "bypass" | "error" | ((args) => Strategy);
+  adapter?: unknown;
 });
 ```
+
+**Parameters:**
+- `origin`: (optional) Base URL for relative paths. Can also be set later via `.origin()`
+- `onUnhandledRequest`: (optional) Strategy for unhandled requests. Defaults to `'error'` in test environments (Vitest/Jest) and `'warn'` otherwise
+- `adapter`: (optional) Axios instance to intercept (see [Axios adapter section](#axios-adapter-optional))
 
 Returns `intercept` for chaining with `.origin()`.
 
@@ -739,35 +858,50 @@ afterAll(() => {
 });
 ```
 
-### `createSetup(options)`
+### `setupIntercept(options)`
 
-Create a test setup helper that reduces boilerplate. Returns an object with lifecycle methods:
+Convenience helper that automatically registers lifecycle hooks for minimal boilerplate. Use this when you don't need custom logic in your hooks.
 
 ```ts
-createSetup(options: ListenOptions): {
-  start: () => void;
-  reset: () => void;
-  close: () => void;
-}
+setupIntercept(options?: {
+  origin?: string;
+  onUnhandledRequest?: "warn" | "bypass" | "error" | ((args) => Strategy);
+  adapter?: unknown;
+}): void;
 ```
 
 **Parameters:**
-- `options`: Same as `intercept.listen()` - can include `origin` and `onUnhandledRequest`
+- `options`: (optional) Configuration object with the same options as `intercept.listen()`:
+  - `origin`: Base URL for relative paths
+  - `onUnhandledRequest`: Strategy for unhandled requests (default: auto-detected)
+  - `adapter`: Axios instance to intercept
+
+**What it does:**
+- Automatically calls `intercept.listen(options)` in a `beforeAll` hook
+- Automatically calls `intercept.reset()` in an `afterEach` hook
+- Automatically calls `intercept.close()` in an `afterAll` hook
 
 **Example:**
 ```ts
 // setupTests.ts
-import { createSetup } from "@klogt/intercept";
+import { setupIntercept } from "@klogt/intercept";
 
-const setup = createSetup({
+setupIntercept({
   origin: 'https://api.example.com',
   onUnhandledRequest: 'error'
 });
-
-beforeAll(setup.start);
-afterEach(setup.reset);
-afterAll(setup.close);
 ```
+
+**When to use:**
+- You have a single API origin for your entire test suite
+- You don't need custom logic in lifecycle hooks
+- You want minimal boilerplate
+
+**When to use manual setup instead:**
+- You need custom logging or debugging in hooks
+- You need conditional or dynamic setup
+- You need to integrate with other test setup/teardown
+- You need per-test origins
 
 ---
 

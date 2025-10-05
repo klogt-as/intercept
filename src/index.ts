@@ -1,4 +1,4 @@
-export { createSetup, intercept } from "./api/intercept";
+export { intercept, setupIntercept } from "./api/intercept";
 
 export type {
   ExtractPathParams,

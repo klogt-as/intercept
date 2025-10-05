@@ -1,3 +1,6 @@
 {
-  "ignoreDependencies": ["@biomejs/biome", "axios"]
+  "ignore": [
+    "src/adapters/axios-types.test-d.ts"
+  ],
+  "ignoreDependencies": ["@biomejs/biome"]
 }
