@@ -6,7 +6,7 @@
     "useIgnoreFile": false
   },
   "files": {
-    "includes": ["src/**"],
+    "includes": ["src/**", "package.json"],
     "ignoreUnknown": false
   },
   "formatter": {
@@ -24,6 +24,11 @@
   "javascript": {
     "formatter": {
       "quoteStyle": "double"
+    }
+  },
+  "json": {
+    "formatter": {
+      "enabled": true
     }
   },
   "assist": {
